@@ -1,0 +1,312 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smart Support Ticket System - Design System
+   Blue & Purple SaaS palette with soft shadows and rounded elements
+*/
+
+@layer base {
+  :root {
+    /* Core backgrounds */
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+
+    /* Cards and surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Blue */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Light Blue */
+    --secondary: 214 95% 93%;
+    --secondary-foreground: 217 91% 40%;
+
+    /* Muted surfaces */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    /* Accent - Purple */
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive - Red */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* Status colors */
+    --status-open: 217 91% 60%;
+    --status-open-bg: 214 95% 93%;
+    --status-progress: 45 93% 47%;
+    --status-progress-bg: 48 96% 89%;
+    --status-resolved: 142 71% 45%;
+    --status-resolved-bg: 141 79% 85%;
+    --status-closed: 220 9% 46%;
+    --status-closed-bg: 220 14% 96%;
+
+    /* Priority colors */
+    --priority-critical: 0 84% 60%;
+    --priority-critical-bg: 0 86% 97%;
+    --priority-high: 25 95% 53%;
+    --priority-high-bg: 34 100% 92%;
+    --priority-medium: 45 93% 47%;
+    --priority-medium-bg: 48 96% 89%;
+    --priority-low: 142 71% 45%;
+    --priority-low-bg: 141 79% 85%;
+
+    /* AI confidence */
+    --ai-high: 262 83% 58%;
+    --ai-medium: 217 91% 60%;
+    --ai-low: 45 93% 47%;
+
+    /* Chart colors */
+    --chart-1: 217 91% 60%;
+    --chart-2: 262 83% 58%;
+    --chart-3: 142 71% 45%;
+    --chart-4: 45 93% 47%;
+    --chart-5: 0 84% 60%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 262 83% 58%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(262 83% 58%));
+    --gradient-hero: linear-gradient(135deg, hsl(217 91% 60%), hsl(262 83% 65%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 20% 98%));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(220 13% 91% / 0.5);
+    --shadow-md: 0 4px 6px -1px hsl(220 13% 91% / 0.4), 0 2px 4px -2px hsl(220 13% 91% / 0.4);
+    --shadow-lg: 0 10px 15px -3px hsl(220 13% 91% / 0.4), 0 4px 6px -4px hsl(220 13% 91% / 0.4);
+    --shadow-xl: 0 20px 25px -5px hsl(220 13% 91% / 0.3), 0 8px 10px -6px hsl(220 13% 91% / 0.3);
+    --shadow-card: 0 1px 3px hsl(220 13% 91% / 0.3), 0 1px 2px hsl(220 13% 91% / 0.2);
+    --shadow-card-hover: 0 10px 20px hsl(220 13% 91% / 0.4), 0 6px 6px hsl(220 13% 91% / 0.3);
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 262 83% 58%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Stat cards */
+  .stat-card {
+    @apply bg-card rounded-xl p-6 transition-all duration-300;
+    box-shadow: var(--shadow-card);
+  }
+
+  .stat-card:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+
+  /* Status badges */
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .status-open {
+    @apply bg-[hsl(var(--status-open-bg))] text-[hsl(var(--status-open))];
+  }
+
+  .status-progress {
+    @apply bg-[hsl(var(--status-progress-bg))] text-[hsl(var(--status-progress))];
+  }
+
+  .status-resolved {
+    @apply bg-[hsl(var(--status-resolved-bg))] text-[hsl(var(--status-resolved))];
+  }
+
+  .status-closed {
+    @apply bg-[hsl(var(--status-closed-bg))] text-[hsl(var(--status-closed))];
+  }
+
+  /* Priority badges */
+  .priority-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .priority-critical {
+    @apply bg-[hsl(var(--priority-critical-bg))] text-[hsl(var(--priority-critical))];
+  }
+
+  .priority-high {
+    @apply bg-[hsl(var(--priority-high-bg))] text-[hsl(var(--priority-high))];
+  }
+
+  .priority-medium {
+    @apply bg-[hsl(var(--priority-medium-bg))] text-[hsl(var(--priority-medium))];
+  }
+
+  .priority-low {
+    @apply bg-[hsl(var(--priority-low-bg))] text-[hsl(var(--priority-low))];
+  }
+
+  /* AI confidence badge */
+  .ai-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium;
+    background: var(--gradient-primary);
+    color: white;
+  }
+
+  /* Gradient button */
+  .btn-gradient {
+    background: var(--gradient-primary);
+    @apply text-white font-medium rounded-lg px-4 py-2 transition-all duration-300;
+  }
+
+  .btn-gradient:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px hsl(217 91% 60% / 0.4);
+  }
+
+  /* Card with gradient border */
+  .card-gradient {
+    @apply relative bg-card rounded-xl overflow-hidden;
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-gradient::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-1;
+    background: var(--gradient-primary);
+  }
+
+  /* Sidebar navigation */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-muted-foreground transition-all duration-200;
+  }
+
+  .nav-item:hover {
+    @apply bg-muted text-foreground;
+  }
+
+  .nav-item.active {
+    @apply bg-primary/10 text-primary font-medium;
+  }
+
+  /* Table styles */
+  .data-table {
+    @apply w-full;
+  }
+
+  .data-table th {
+    @apply px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider bg-muted/50;
+  }
+
+  .data-table td {
+    @apply px-4 py-4 text-sm;
+  }
+
+  .data-table tr {
+    @apply border-b border-border transition-colors;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-muted/30;
+  }
+
+  /* Form inputs */
+  .form-input {
+    @apply w-full px-4 py-2.5 rounded-lg border border-input bg-background text-foreground transition-all duration-200;
+  }
+
+  .form-input:focus {
+    @apply outline-none ring-2 ring-primary/20 border-primary;
+  }
+
+  .form-input::placeholder {
+    @apply text-muted-foreground;
+  }
+
+  /* Notification badge */
+  .notification-dot {
+    @apply absolute -top-1 -right-1 w-2.5 h-2.5 bg-destructive rounded-full;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-card-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+}
