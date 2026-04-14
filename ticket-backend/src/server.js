@@ -13,6 +13,8 @@ const categoryRoutes = require('./routes/category.routes');
 const departmentRoutes = require('./routes/department.routes');
 const organizationRoutes = require('./routes/organization.routes');
 const workflowRoutes = require('./routes/workflow.routes');
+const { ticketRouter, billingRouter } = require('./routes/workflow.routes');
+
 
 const app = express();
 
@@ -72,7 +74,8 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/workflow-templates', workflowRoutes);
-
+app.use('/api/tickets',  ticketRouter);   // les routes workflow/:action
+app.use('/api/billing',  billingRouter);  // liste globale des factures
 
 
 

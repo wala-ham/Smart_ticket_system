@@ -563,7 +563,16 @@ const TicketDetails: React.FC = () => {
               </div>
             )}
           </div>
-            <TicketWorkflow ticketId={ticket.id} token={tk()} userRole={user?.role} />
+            {/* <TicketWorkflow ticketId={ticket.id} token={tk()} userRole={user?.role} /> */}
+            <TicketWorkflow
+  ticketId={ticket.id}
+  token={tk()}
+  userRole={user?.role}
+  ticketStatus={ticket.status} 
+  onStatusChange={(newStatus) => {
+    setTicket(prev => prev ? { ...prev, status: newStatus } : prev);
+  }}
+/>
           {/* AI Analysis */}
           {ticket.ai_category_confidence !== undefined && (
             <div className="card-gradient p-6 rounded-lg border border-purple-200/50 bg-purple-50/50">

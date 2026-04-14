@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, Search, Menu, Shield, Headphones, User, Building, Tag, Building2,Inbox, ListChecks, Workflow, LayoutList } from 'lucide-react';
+import { Bell, Search, Menu, Shield, Headphones, User, Building, Tag, Building2,Inbox, ListChecks, Workflow, LayoutList, GitBranch, Layers, Zap    } from 'lucide-react';
 import { 
   LayoutDashboard, 
   Ticket, 
@@ -46,6 +46,7 @@ const navItems: NavItem[] = [
   { label: 'Manage Tickets', icon: Ticket, path: '/admin/tickets', roles: ['super_admin', 'company_admin'] },
   { label: 'Worklist', icon: ListChecks, path: '/worklist', roles: ['company_admin'] }, 
   { label: 'Manage Workflow', icon: Workflow, path: '/admin/workflows', roles: ['company_admin'] }, 
+  { label: 'Workflow Tickets', icon: GitBranch , path: '/tickets/tree', roles: ['company_admin'] }, 
 
   // { label: 'All Tickets', icon: Ticket, path: '/admin/tickets', roles: ['super_admin', 'company_admin'] },
   // { label: 'Pending Tickets', icon: Clock, path: '/agent/pending', roles: ['employee', 'company_admin'] },

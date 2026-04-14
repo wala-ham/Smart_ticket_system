@@ -119,7 +119,12 @@ const Ticket = sequelize.define('Ticket', {
   closed_at: {
     type: DataTypes.DATE,
     allowNull: true
-  }
+  },
+  started_at:        { type: DataTypes.DATE, allowNull: true },
+ended_at:          { type: DataTypes.DATE, allowNull: true },
+duration_minutes:  { type: DataTypes.INTEGER, allowNull: true },
+suspended_at:      { type: DataTypes.DATE, allowNull: true },
+resumed_at:        { type: DataTypes.DATE, allowNull: true },
 }, {
   tableName: 'tickets',
   timestamps: true,

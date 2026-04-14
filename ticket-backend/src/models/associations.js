@@ -18,6 +18,7 @@ const WorkflowTemplate     = require('./WorkflowTemplate')(sequelize);
 const WorkflowTemplateStep = require('./WorkflowTemplateStep')(sequelize);
 const TicketWorkflowState  = require('./TicketWorkflowState')(sequelize);
 const WorkflowHistory      = require('./WorkflowHistory')(sequelize);
+const TicketBilling      = require('./TicketBilling')(sequelize);
 
 // ============================================
 // ORGANIZATION ASSOCIATIONS
@@ -84,6 +85,9 @@ Comment.belongsTo(Ticket, { foreignKey: 'ticket_id', as: 'ticket' });
 Ticket.hasMany(Attachment, { foreignKey: 'ticket_id', as: 'attachments', onDelete: 'CASCADE' });
 Attachment.belongsTo(Ticket, { foreignKey: 'ticket_id', as: 'ticket' });
 
+Ticket.hasOne(TicketBilling, { foreignKey: 'ticket_id', as: 'billing' });
+TicketBilling.belongsTo(Ticket, { foreignKey: 'ticket_id', as: 'ticket' });
+TicketBilling.belongsTo(User,   { foreignKey: 'created_by', as: 'creator' });
 // ============================================
 // WORKFLOW ASSOCIATIONS (Logique métier)
 // ============================================
@@ -132,6 +136,7 @@ module.exports = {
   Category,
   Supplier,
   Department,
+  TicketBilling,
   WorkflowTemplate,
   WorkflowTemplateStep,
   TicketWorkflowState,

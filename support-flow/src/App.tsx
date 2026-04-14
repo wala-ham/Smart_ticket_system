@@ -29,6 +29,7 @@ import ManageCategories from "./pages/company_admin/ManageCategories";
 import ManageDepartments from '@/pages/company_admin/ManageDepartments';
 import WorklistPage      from '@/pages/customer/WorklistPage';
 import ManageWorkflows from "./pages/admin/ManageWorkflows";
+import TicketsTreeView from "./pages/TicketsTreeView";
 // import ClientDetail from "./pages/company_admin/ClientDetail";
 // import CreateClient from "./pages/company_admin/CreateClient";
 
@@ -83,10 +84,13 @@ const AppRoutes = () => {
         
         {/* Customer routes */}
         <Route path="/tickets" element={<MyTickets />} />
+        <Route path="/tickets/tree" element={<TicketsTreeView />} />
         <Route path="/tickets/:id" element={<TicketDetails />} />
         <Route path="/tickets/resolved" element={<ResolvedTickets />} />
         <Route path="/create-ticket" element={<CreateTicket />} />
         <Route path="/history" element={<History />} />
+       
+
         
         {/* Agent routes */}
         <Route path="/agent/tickets" element={<MyTickets />} />
