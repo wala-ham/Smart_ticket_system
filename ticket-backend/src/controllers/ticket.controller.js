@@ -4,6 +4,7 @@ const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const fs   = require('fs');
 const path = require('path');
+const { analyzeTicket } = require('../utils/aiAnalysis');
 
 // ─── Helper : trouver l'employé le moins chargé dans un département ────────────
 async function findAvailableEmployee(departmentId, organizationId) {
@@ -30,6 +31,82 @@ async function findAvailableEmployee(departmentId, organizationId) {
 }
 
 // ─── Créer un ticket (avec département + auto-assign) ─────────────────────────
+// exports.createTicket = async (req, res) => {
+//   try {
+//     const errors = validationResult(req);
+//     if (!errors.isEmpty()) {
+//       if (req.files?.length) req.files.forEach(f => fs.unlinkSync(f.path));
+//       return res.status(400).json({ success: false, errors: errors.array() });
+//     }
+
+//     const { subject, description, category_id, department_id } = req.body;
+
+//     // Auto-assign au premier dispo du département si fourni
+//     let assigned_to = null;
+//     let status      = 'open';
+
+//     if (department_id) {
+//       const available = await findAvailableEmployee(department_id, req.user.organization_id);
+//       if (available) {
+//         assigned_to = available.id;
+//         status      = 'in_progress';
+//       }
+//     }
+
+//     const ticket = await Ticket.create({
+//       subject,
+//       description,
+//       category_id,
+//       department_id:   department_id || null,
+//       created_by:      req.user.id,
+//       organization_id: req.user.organization_id,
+//       status,
+//       priority:        'medium',
+//       assigned_to,
+//       workflow_step:   'department',
+//       in_worklist:     false
+//     });
+
+//     // Gérer les fichiers uploadés
+//     if (req.files?.length) {
+//       await Promise.all(req.files.map(file => Attachment.create({
+//         ticket_id:     ticket.id,
+//         filename:      file.filename,
+//         original_name: file.originalname,
+//         file_path:     file.path,
+//         file_size:     file.size,
+//         mime_type:     file.mimetype,
+//         uploaded_by:   req.user.id
+//       })));
+//     }
+
+//     await ticket.reload({
+//       include: [
+//         { model: User,       as: 'creator',    attributes: ['id', 'full_name', 'email'] },
+//         { model: User,       as: 'assignee',   attributes: ['id', 'full_name', 'email'] },
+//         { model: Category,   as: 'category' },
+//         { model: Department, as: 'department', attributes: ['id', 'name'] },
+//         {
+//           model: Attachment, as: 'attachments',
+//           include: [{ model: User, as: 'uploader', attributes: ['id', 'full_name'] }]
+//         }
+//       ]
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message: assigned_to
+//         ? `Ticket créé et assigné automatiquement à ${ticket.assignee?.full_name}`
+//         : 'Ticket créé avec succès',
+//       data: { ticket }
+//     });
+//   } catch (error) {
+//     console.error('Erreur createTicket:', error);
+//     if (req.files?.length) req.files.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
+//     res.status(500).json({ success: false, message: 'Erreur serveur lors de la création du ticket', error: error.message });
+//   }
+// };
+
 exports.createTicket = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -37,36 +114,66 @@ exports.createTicket = async (req, res) => {
       if (req.files?.length) req.files.forEach(f => fs.unlinkSync(f.path));
       return res.status(400).json({ success: false, errors: errors.array() });
     }
-
-    const { subject, description, category_id, department_id } = req.body;
-
-    // Auto-assign au premier dispo du département si fourni
+ 
+    let { subject, description, category_id, department_id } = req.body;
+ 
+    // ── ÉTAPE 1 : Analyse IA du ticket ────────────────────────────────────────
+    let aiResult = null;
+    try {
+      // Charger les catégories disponibles pour l'org
+      const [categories, departments] = await Promise.all([
+        Category.findAll({ attributes: ['id', 'name'] }),
+        Department.findAll({ attributes: ['id', 'name'], where: { is_active: true } })
+      ]);
+      aiResult = await analyzeTicket(subject, description, categories, departments);
+    } catch (aiErr) {
+      console.error('AI analysis failed (non-blocking):', aiErr.message);
+    }
+   
+ 
+    // ── ÉTAPE 2 : Appliquer les résultats IA si catégorie pas fournie ─────────
+    // Si le client n'a pas choisi de catégorie → utiliser celle de l'IA
+    if (!category_id && aiResult?.category_id) {
+      category_id = aiResult.category_id;
+    }
+    // NOUVEAU : Si pas de département choisi -> IA
+    if (!department_id && aiResult?.department_id) {
+      department_id = aiResult.department_id;
+    }
+ 
+    // Priorité : toujours utiliser l'IA sauf si admin a forcé une valeur
+    const priority = aiResult?.priority ?? 'medium';
+ 
+    // ── ÉTAPE 3 : Auto-assign département ────────────────────────────────────
     let assigned_to = null;
     let status      = 'open';
-
+ 
     if (department_id) {
       const available = await findAvailableEmployee(department_id, req.user.organization_id);
-      if (available) {
-        assigned_to = available.id;
-        status      = 'in_progress';
-      }
+      if (available) { assigned_to = available.id; status = 'in_progress'; }
     }
-
+ 
+    // ── ÉTAPE 4 : Créer le ticket avec données IA ────────────────────────────
     const ticket = await Ticket.create({
       subject,
       description,
       category_id,
-      department_id:   department_id || null,
-      created_by:      req.user.id,
+      department_id: department_id || null,
+      created_by: req.user.id,
       organization_id: req.user.organization_id,
       status,
-      priority:        'medium',
+      priority,
       assigned_to,
-      workflow_step:   'department',
-      in_worklist:     false
+      workflow_step: 'department',
+      in_worklist: false,
+      // Mapping correct avec ton JSON Postman
+      ai_category_confidence: aiResult?.confidence ?? null, // Utilise 'confidence'
+      ai_summary: aiResult?.summary ?? null,
+      ai_sentiment: aiResult?.sentiment ?? null,
+      ai_keywords: aiResult?.keywords?.join(', ') ?? null,
     });
-
-    // Gérer les fichiers uploadés
+ 
+    // Fichiers
     if (req.files?.length) {
       await Promise.all(req.files.map(file => Attachment.create({
         ticket_id:     ticket.id,
@@ -78,34 +185,51 @@ exports.createTicket = async (req, res) => {
         uploaded_by:   req.user.id
       })));
     }
-
+ 
+    // ── ÉTAPE 5 : Auto-start workflow client ─────────────────────────────────
+    // const wfClient = await autoStartWorkflow(ticket, 'client', req.user.id);
+    // if (wfClient?.assignedUser) {
+    //   try {
+    //     await sendEmail(
+    //       wfClient.assignedUser.email,
+    //       `[${ticket.ticket_number || 'TKT-' + ticket.id}] Ticket assigné — ${wfClient.firstStep.label ?? 'Étape 1'}`,
+    //       `Bonjour ${wfClient.assignedUser.full_name},\n\nUn ticket vous a été assigné.\n\nTicket  : ${ticket.subject}\nRésumé IA : ${aiResult?.summary ?? '-'}\nPriorité  : ${priority}\n\nConnectez-vous pour le traiter.`,
+    //       null
+    //     );
+    //   } catch (e) { console.error('Email client step 1:', e.message); }
+    // }
+ 
     await ticket.reload({
       include: [
-        { model: User,       as: 'creator',    attributes: ['id', 'full_name', 'email'] },
-        { model: User,       as: 'assignee',   attributes: ['id', 'full_name', 'email'] },
-        { model: Category,   as: 'category' },
+        { model: User, as: 'creator', attributes: ['id', 'full_name', 'email'] },
+        { model: User, as: 'assignee', attributes: ['id', 'full_name', 'email'] },
+        { model: Category, as: 'category' },
         { model: Department, as: 'department', attributes: ['id', 'name'] },
-        {
-          model: Attachment, as: 'attachments',
-          include: [{ model: User, as: 'uploader', attributes: ['id', 'full_name'] }]
-        }
+        { model: Attachment, as: 'attachments' }
       ]
     });
-
+ 
     res.status(201).json({
       success: true,
-      message: assigned_to
-        ? `Ticket créé et assigné automatiquement à ${ticket.assignee?.full_name}`
-        : 'Ticket créé avec succès',
-      data: { ticket }
+      data: {
+        ticket,
+        ai_analysis: aiResult ? {
+          category: aiResult.category_name,
+          department_name: aiResult.department_name, // Ajouté pour le front
+          priority: aiResult.priority,
+          confidence: aiResult.confidence, // Harmonisé
+          summary: aiResult.summary,
+          sentiment: aiResult.sentiment,
+          keywords: aiResult.keywords,
+        } : null,
+      }
     });
   } catch (error) {
     console.error('Erreur createTicket:', error);
     if (req.files?.length) req.files.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
-    res.status(500).json({ success: false, message: 'Erreur serveur lors de la création du ticket', error: error.message });
+    res.status(500).json({ success: false, message: 'Erreur serveur', error: error.message });
   }
 };
-
 // ─── NOUVEAU : Escalader vers le Worklist ─────────────────────────────────────
 // PUT /api/tickets/:id/escalate
 exports.escalateToWorklist = async (req, res) => {

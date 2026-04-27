@@ -222,7 +222,7 @@ await sequelize.query(`
     console.log('\n🏢 ORGANISATION 1: Mohamed Auto');
     console.log('   👑 Admin: mohamed@mohamedauto.com / mohamed123');
     console.log('   👨‍💼 Employés: ali@mohamedauto.com / ali123');
-    console.log('   👥 Client: ahmed.client@gmail.com / client123');
+    console.log('   👥 Client: wala.hammemi@gmail.com / 123456789');
     console.log('\n🏢 ORGANISATION 2: TechService SARL');
     console.log('   👑 Admin: sarah@techservice.tn / sarah123');
     console.log('\n═══════════════════════════════════════════════════');

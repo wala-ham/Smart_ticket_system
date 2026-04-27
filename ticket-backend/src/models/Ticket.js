@@ -97,6 +97,11 @@ const Ticket = sequelize.define('Ticket', {
     allowNull: true,
     validate: { min: 0, max: 100 }
   },
+  ai_department_confidence: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: true,
+    validate: { min: 0, max: 100 }
+  },
   ai_priority_confidence: {
     type: DataTypes.DECIMAL(5, 2),
     allowNull: true,
@@ -120,12 +125,16 @@ const Ticket = sequelize.define('Ticket', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  started_at:        { type: DataTypes.DATE, allowNull: true },
-ended_at:          { type: DataTypes.DATE, allowNull: true },
-duration_minutes:  { type: DataTypes.INTEGER, allowNull: true },
-suspended_at:      { type: DataTypes.DATE, allowNull: true },
-resumed_at:        { type: DataTypes.DATE, allowNull: true },
-}, {
+  started_at:           { type: DataTypes.DATE, allowNull: true },
+  ended_at:             { type: DataTypes.DATE, allowNull: true },
+  duration_minutes:     { type: DataTypes.INTEGER, allowNull: true },
+  suspended_at:         { type: DataTypes.DATE, allowNull: true },
+  resumed_at:           { type: DataTypes.DATE, allowNull: true },
+  ai_summary:           { type: DataTypes.TEXT, allowNull: true },
+  ai_sentiment:         { type: DataTypes.STRING(20), allowNull: true },
+  ai_keywords:          { type: DataTypes.TEXT, allowNull: true },
+},
+ {
   tableName: 'tickets',
   timestamps: true,
   createdAt: 'created_at',

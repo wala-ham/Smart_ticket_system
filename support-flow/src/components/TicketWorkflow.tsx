@@ -196,7 +196,7 @@ const call = async (action: string, body: object = {}) => {
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2 text-sm">
           <Play className="h-4 w-4 text-indigo-500" />
-          Workflow
+          History
           {state && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">{state.template?.name}</span>}
         </h3>
         {state && (

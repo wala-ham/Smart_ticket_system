@@ -574,7 +574,7 @@ const TicketDetails: React.FC = () => {
   }}
 />
           {/* AI Analysis */}
-          {ticket.ai_category_confidence !== undefined && (
+          {/* {ticket.ai_category_confidence !== undefined && (
             <div className="card-gradient p-6 rounded-lg border border-purple-200/50 bg-purple-50/50">
               <h3 className="font-semibold mb-4 flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-purple-500" /> AI Analysis
@@ -592,9 +592,59 @@ const TicketDetails: React.FC = () => {
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          )} */}
+          {/* AI Analysis */}
+{ticket.ai_category_confidence !== undefined && (
+  <div className="card-gradient p-6 rounded-lg border border-purple-200/50 bg-purple-50/50 space-y-4">
+    <h3 className="font-semibold mb-4 flex items-center gap-2 text-purple-900">
+      <Sparkles className="h-5 w-5 text-purple-500" /> AI Analysis
+    </h3>
 
+    {/* Section Catégorie */}
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <span className="text-sm font-medium text-purple-700">
+          📁 Catégorie : <span className="text-slate-900">{ticket.category?.name || 'Non classé'}</span>
+        </span>
+        <span className="text-sm font-bold text-purple-600">
+          {/* {Math.round(ticket.ai_category_confidence <= 1 ? ticket.ai_category_confidence * 100 : ticket.ai_category_confidence)}% */}
+        </span>
+      </div>
+      <div >
+        <div 
+          // className="bg-gradient-to-r from-purple-400 to-purple-600 h-2 rounded-full transition-all duration-500"
+          // style={{ 
+          //   width: `${(ticket.ai_category_confidence <= 1 ? ticket.ai_category_confidence * 100 : ticket.ai_category_confidence)}%` 
+          // }} 
+        />
+      </div>
+    </div>
+
+    {/* Section Département */}
+    {ticket.ai_department_confidence !== undefined && (
+      <div className="space-y-2 pt-2 border-t border-purple-100">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-medium text-indigo-700">
+            🏢 Département : <span className="text-slate-900">{ticket.department?.name || 'Non assigné'}</span>
+          </span>
+          <span className="text-sm font-bold text-indigo-600">
+            {/* {Math.round(ticket.ai_department_confidence <= 1 ? ticket.ai_department_confidence * 100 : ticket.ai_department_confidence)}% */}
+          </span>
+        </div>
+        {/* <div className="w-full bg-indigo-100 rounded-full h-2">
+          <div 
+            // className="bg-gradient-to-r from-indigo-400 to-indigo-600 h-2 rounded-full transition-all duration-500"
+            style={{ 
+              // width: `${(ticket.ai_department_confidence <= 1 ? ticket.ai_department_confidence * 100 : ticket.ai_department_confidence)}%` 
+            }} 
+          />
+        </div> */}
+      </div>
+    )}
+  </div>
+)}
+        </div>
+        
         {/* ── Sidebar ── */}
         <div className="space-y-4">
           {/* Ticket info */}
