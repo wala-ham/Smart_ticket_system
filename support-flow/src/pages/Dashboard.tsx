@@ -198,7 +198,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Graphe 30 jours */}
-          <Card className="border-0 shadow-sm">
+          {/* <Card className="border-0 shadow-sm">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Tickets créés — 30 derniers jours</CardTitle></CardHeader>
             <CardContent>
               {stats?.last_30_days?.length ? (
@@ -220,7 +220,47 @@ const Dashboard: React.FC = () => {
                 <p className="text-sm text-muted-foreground text-center py-6">Pas de données sur 30 jours</p>
               )}
             </CardContent>
-          </Card>
+          </Card> */}
+          {/* Graphe 30 jours */}
+<Card className="border-0 shadow-sm">
+  <CardHeader className="pb-2">
+    <CardTitle className="text-sm font-semibold">Tickets créés — 30 derniers jours</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {stats?.last_30_days && stats.last_30_days.length > 0 ? (
+      <div className="flex items-end gap-1 h-24 pt-6"> {/* Hauteur augmentée pour mieux voir */}
+        {(() => {
+          // 1. On convertit tout en nombres et on trouve le max
+          const counts = stats.last_30_days.map((d: any) => parseInt(d.count, 10) || 0);
+          const maxV = Math.max(...counts, 1);
+
+          return stats.last_30_days.map((d: any, i: number) => {
+            const currentCount = parseInt(d.count, 10) || 0;
+            // 2. Calcul du pourcentage
+            const pct = (currentCount / maxV) * 100;
+
+            return (
+              <div key={i} className="flex-1 group relative flex flex-col justify-end h-full">
+                {/* Tooltip au survol */}
+                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                  {d.date}: {currentCount}
+                </div>
+                
+                {/* La barre */}
+                <div 
+                  className="w-full bg-indigo-500 hover:bg-indigo-400 rounded-t-sm transition-all duration-300" 
+                  style={{ height: `${Math.max(pct, 5)}%` }} 
+                />
+              </div>
+            );
+          });
+        })()}
+      </div>
+    ) : (
+      <p className="text-sm text-muted-foreground text-center py-6">Pas de données sur 30 jours</p>
+    )}
+  </CardContent>
+</Card>
 
           {/* Récents + Critiques */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

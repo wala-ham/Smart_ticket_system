@@ -308,7 +308,7 @@ useEffect(() => {
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4 px-2">
             <p className="text-xs text-muted-foreground">
-               Total: <span className="font-bold text-foreground">{total ?? 0}</span> agents
+                <span className="font-bold text-foreground"></span> 
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1}>

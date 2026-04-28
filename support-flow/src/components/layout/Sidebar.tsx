@@ -29,7 +29,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['client', 'employee', 'super_admin'] },
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['client', 'employee', 'super_admin', 'company_admin'] },
   { label: 'My Tickets', icon: Ticket, path: '/tickets', roles: ['client', 'employee'] },
   { label: 'Create Ticket', icon: PlusCircle, path: '/create-ticket', roles: ['client'] },
   { label: 'Resolved Tickets', icon: CheckCircle, path: '/tickets/resolved', roles: ['client'] },
