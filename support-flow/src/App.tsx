@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 // Pages
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
+// import Dashboard from "./pages/Dashboard";
 import CreateTicket from "./pages/customer/CreateTicket";
 import MyTickets from "./pages/customer/MyTickets";
 import ResolvedTickets from "./pages/customer/ResolvedTickets";
@@ -30,6 +30,7 @@ import ManageDepartments from '@/pages/company_admin/ManageDepartments';
 import WorklistPage      from '@/pages/customer/WorklistPage';
 import ManageWorkflows from "./pages/admin/ManageWorkflows";
 import TicketsTreeView from "./pages/TicketsTreeView";
+import Dashboard from '@/pages/Dashboard';
 // import ClientDetail from "./pages/company_admin/ClientDetail";
 // import CreateClient from "./pages/company_admin/CreateClient";
 
@@ -110,6 +111,7 @@ const AppRoutes = () => {
         <Route path="/admin/departments" element={<ManageDepartments />} />
         <Route path="/worklist"          element={<WorklistPage />} />
         <Route path="/admin/workflows" element={<ManageWorkflows />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         {/* <Route path="/admin/clients/:id"     element={<ClientDetail />} />
         <Route path="/admin/clients/create" element={<CreateClient />} /> */}
         

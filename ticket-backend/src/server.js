@@ -77,7 +77,7 @@ app.use('/api/workflow-templates', workflowRoutes);
 app.use('/api/tickets',  ticketRouter);   // les routes workflow/:action
 app.use('/api/billing',  billingRouter);  // liste globale des factures
 app.use('/api/ai', require('./routes/ai.routes'));
-
+app.use('/api/dashboard', require('./routes/dashboard.routes'));
 
 
 

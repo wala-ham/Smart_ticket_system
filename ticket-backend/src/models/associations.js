@@ -130,6 +130,7 @@ WorkflowHistory.belongsTo(User, { foreignKey: 'assigned_to', as: 'assignee' });
 module.exports = {
   User,
   Organization,
+  sequelize,
   Ticket,
   Comment,
   Attachment,
