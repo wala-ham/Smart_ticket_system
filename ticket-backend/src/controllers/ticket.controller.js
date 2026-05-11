@@ -5,30 +5,32 @@ const { Op } = require('sequelize');
 const fs   = require('fs');
 const path = require('path');
 const { analyzeTicket } = require('../utils/aiAnalysis');
+const { findBestAgent } = require('../utils/agentScoring');
+
 
 // ─── Helper : trouver l'employé le moins chargé dans un département ────────────
-async function findAvailableEmployee(departmentId, organizationId) {
-  const employees = await User.findAll({
-    where: {
-      organization_id: organizationId,
-      department_id:   departmentId,
-      role:            { [Op.in]: ['employee', 'company_admin'] },
-      is_active:       true
-    },
-    include: [{
-      model:    Ticket,
-      as:       'assignedTickets',
-      required: false,
-      where:    { status: { [Op.in]: ['open', 'in_progress'] } },
-      attributes: ['id']
-    }]
-  });
-  if (!employees.length) return null;
-  employees.sort((a, b) =>
-    (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0)
-  );
-  return employees[0];
-}
+// async function findAvailableEmployee(departmentId, organizationId) {
+//   const employees = await User.findAll({
+//     where: {
+//       organization_id: organizationId,
+//       department_id:   departmentId,
+//       role:            { [Op.in]: ['employee', 'company_admin'] },
+//       is_active:       true
+//     },
+//     include: [{
+//       model:    Ticket,
+//       as:       'assignedTickets',
+//       required: false,
+//       where:    { status: { [Op.in]: ['open', 'in_progress'] } },
+//       attributes: ['id']
+//     }]
+//   });
+//   if (!employees.length) return null;
+//   employees.sort((a, b) =>
+//     (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0)
+//   );
+//   return employees[0];
+// }
 
 // ─── Créer un ticket (avec département + auto-assign) ─────────────────────────
 // exports.createTicket = async (req, res) => {
@@ -145,13 +147,25 @@ exports.createTicket = async (req, res) => {
     const priority = aiResult?.priority ?? 'medium';
  
     // ── ÉTAPE 3 : Auto-assign département ────────────────────────────────────
-    let assigned_to = null;
-    let status      = 'open';
+//     let assigned_to = null;
+//     let status      = 'open';
  
-    if (department_id) {
-      const available = await findAvailableEmployee(department_id, req.user.organization_id);
-      if (available) { assigned_to = available.id; status = 'in_progress'; }
-    }
+//     if (department_id) {
+//       // const available = await findAvailableEmployee(department_id, req.user.organization_id);
+//       const available = await findBestAgent(
+//   { department_id: department_id || null },
+//   req.user.organization_id
+// );
+//       if (available) { assigned_to = available.id; status = 'in_progress'; }
+//     }
+let assigned_to = null;
+let status      = 'open';
+
+const available = await findBestAgent(
+  { department_id: department_id || null },  // filtre dept si fourni, sinon toute l'org
+  req.user.organization_id
+);
+if (available) { assigned_to = available.id; status = 'in_progress'; }
  
     // ── ÉTAPE 4 : Créer le ticket avec données IA ────────────────────────────
     const ticket = await Ticket.create({
@@ -247,29 +261,29 @@ exports.escalateToWorklist = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Impossible d\'escalader un ticket résolu/fermé' });
 
     // Trouver un employé dispo dans toute l'org (plus de restriction département)
-    const candidates = await User.findAll({
-      where: {
-        organization_id: ticket.organization_id,
-        role:            { [Op.in]: ['employee', 'company_admin'] },
-        is_active:       true
-      },
-      include: [{
-        model:    Ticket,
-        as:       'assignedTickets',
-        required: false,
-        where:    { status: { [Op.in]: ['open', 'in_progress'] } },
-        attributes: ['id']
-      }]
-    });
+    // const candidates = await User.findAll({
+    //   where: {
+    //     organization_id: ticket.organization_id,
+    //     role:            { [Op.in]: ['employee', 'company_admin'] },
+    //     is_active:       true
+    //   },
+    //   include: [{
+    //     model:    Ticket,
+    //     as:       'assignedTickets',
+    //     required: false,
+    //     where:    { status: { [Op.in]: ['open', 'in_progress'] } },
+    //     attributes: ['id']
+    //   }]
+    // });
 
-    let newAssignee = null;
-    if (candidates.length) {
-      candidates.sort((a, b) =>
-        (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0)
-      );
-      newAssignee = candidates[0];
-    }
-
+    // let newAssignee = null;
+    // if (candidates.length) {
+    //   candidates.sort((a, b) =>
+    //     (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0)
+    //   );
+    //   newAssignee = candidates[0];
+    // }
+  const newAssignee = await findBestAgent({}, ticket.organization_id);
     await ticket.update({
       workflow_step: 'worklist',
       in_worklist:   true,
@@ -351,7 +365,9 @@ exports.worklistAssign = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Employé invalide' });
 
     await ticket.update({ assigned_to: employee_id, status: 'in_progress' });
-
+    if (ticket.assigned_to && ticket.assigned_to !== employee_id) {
+  updateAgentScore(ticket.assigned_to).catch(() => {});
+}
     await ticket.reload({
       include: [
         { model: User,       as: 'creator',    attributes: ['id', 'full_name', 'email'] },
@@ -474,6 +490,13 @@ exports.getAllTickets = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const where = {};
+    if (req.user.role !== 'super_admin') {
+      where.organization_id = req.user.organization_id;
+    } 
+    if (req.user.role === 'employee') {
+      // L'AGENT (employee) : voit UNIQUEMENT ce qui lui est assigné
+      where.assigned_to = req.user.id;
+    }
     if (req.user.role === 'client') where.created_by = req.user.id;
     if (status)        where.status        = status;
     if (priority)      where.priority      = priority;

@@ -2,6 +2,7 @@
 
 // const { sequelize } = require('../models');
 const sequelize = require('../models');
+const { findBestAgent, updateAgentScore } = require('../utils/agentScoring');
 const {
   WorkflowTemplate, WorkflowTemplateStep,
   TicketWorkflowState, WorkflowHistory, TicketBilling,
@@ -10,20 +11,21 @@ const {
 const { sendEmail } = require('../utils/email');
 
 // ─── Helper : meilleur employé dispo ─────────────────────────────────────────
-async function findBestEmployeeInternal(step, organizationId) {
-  const where = { organization_id: organizationId, is_active: true, is_available: true };
-  if (step.role)          where.role          = step.role;
-  if (step.department_id) where.department_id = step.department_id;
-  const employees = await User.findAll({
-    where,
-    attributes: ['id', 'full_name', 'email', 'role'],
-    include: [{ model: Ticket, as: 'assignedTickets', attributes: ['id'], where: { status: ['open', 'in_progress'] }, required: false }],
-  });
-  if (!employees.length) return null;
-  employees.sort((a, b) => (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0));
-  return employees[0];
-}
-exports.findBestEmployeeInternal = findBestEmployeeInternal;
+// async function findBestEmployeeInternal(step, organizationId) {
+//   const where = { organization_id: organizationId, is_active: true, is_available: true };
+//   if (step.role)          where.role          = step.role;
+//   if (step.department_id) where.department_id = step.department_id;
+//   const employees = await User.findAll({
+//     where,
+//     attributes: ['id', 'full_name', 'email', 'role'],
+//     include: [{ model: Ticket, as: 'assignedTickets', attributes: ['id'], where: { status: ['open', 'in_progress'] }, required: false }],
+//   });
+//   if (!employees.length) return null;
+//   employees.sort((a, b) => (a.assignedTickets?.length ?? 0) - (b.assignedTickets?.length ?? 0));
+//   return employees[0];
+// }
+exports.findBestEmployeeInternal = (step, orgId) => findBestAgent(step, orgId);
+
 
 async function findAllEmployeesForStep(step, organizationId) {
   const where = { organization_id: organizationId, is_active: true };
@@ -172,7 +174,7 @@ exports.startWorkflow = async (req, res) => {
 
     let assignedUser = null;
     if (firstStep.assignment_type === 'OR') {
-      assignedUser = await findBestEmployeeInternal(firstStep, req.user.organization_id);
+      assignedUser = await exports.findBestEmployeeInternal(firstStep, req.user.organization_id);
       if (assignedUser) await ticket.update({ assigned_to: assignedUser.id }, { transaction: t });
     }
 
@@ -251,7 +253,7 @@ exports.forwardWorkflow = async (req, res) => {
         step_ended_at: now,
       }, { transaction: t });
       await t.commit();
-
+      if (ticket.assigned_to) updateAgentScore(ticket.assigned_to).catch(() => {});
       // Email créateur
       const creator = await User.findByPk(ticket.created_by, { attributes: ['email', 'full_name'] });
       notifyUser(creator,
@@ -268,7 +270,7 @@ exports.forwardWorkflow = async (req, res) => {
     let assignedUser = null;
     let andUsers     = [];
     if (nextStep.assignment_type === 'OR') {
-      assignedUser = await findBestEmployeeInternal(nextStep, req.user.organization_id);
+      assignedUser = await exports.findBestEmployeeInternal(nextStep, req.user.organization_id);
       if (assignedUser) await ticket.update({ assigned_to: assignedUser.id }, { transaction: t });
     } else {
       andUsers = await findAllEmployeesForStep(nextStep, req.user.organization_id);
@@ -283,6 +285,7 @@ exports.forwardWorkflow = async (req, res) => {
       comment: `Étape ${nextStep.step_order}: ${nextStep.label ?? ''}`,
     }, { transaction: t });
     await t.commit();
+    if (ticket.assigned_to) updateAgentScore(ticket.assigned_to).catch(() => {});
 
     // Emails
     for (const u of (assignedUser ? [assignedUser] : andUsers)) {
@@ -336,7 +339,7 @@ exports.backwardWorkflow = async (req, res) => {
 
     let assignedUser = null;
     if (prevStep.assignment_type === 'OR') {
-      assignedUser = await findBestEmployeeInternal(prevStep, req.user.organization_id);
+      assignedUser = await exports.findBestEmployeeInternal(prevStep, req.user.organization_id);
       if (assignedUser) await ticket.update({ assigned_to: assignedUser.id }, { transaction: t });
     }
 
@@ -451,7 +454,7 @@ exports.stopWorkflow = async (req, res) => {
       comment: `Arrêté manuellement — durée totale: ${totalDuration ?? '?'} min`,
     }, { transaction: t });
     await t.commit();
-
+    if (ticket.assigned_to) updateAgentScore(ticket.assigned_to).catch(() => {});
     return res.json({ success: true, message: 'Workflow arrêté', data: { duration_minutes: totalDuration, status: 'resolved' } });
   } catch (err) {
     await t.rollback();

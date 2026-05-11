@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, Search, Menu, Shield, Headphones, User, Building, Tag, Building2,Inbox, ListChecks, Workflow, LayoutList, GitBranch, Layers, Zap    } from 'lucide-react';
+import { Bell, Search, Menu, Shield, Headphones, User, Building, Tag, Building2,Inbox, ListChecks, Workflow, LayoutList, GitBranch, Layers, Zap,UserCog, Trophy    } from 'lucide-react';
 import { 
   LayoutDashboard, 
   Ticket, 
@@ -39,7 +39,8 @@ const navItems: NavItem[] = [
  
   { label: 'Analytics', icon: BarChart3, path: '/admin/analytics', roles: ['super_admin'] },
   { label: 'Manage Organizations', icon: Building, path: '/admin/companies', roles: ['super_admin'] },
-  { label: 'Manage Agents', icon: Users, path: '/admin/agents', roles: [ 'company_admin'] },
+  { label: 'Manage Agents', icon: UserCog, path: '/admin/agents', roles: [ 'company_admin'] },
+  { label: 'Agent Leaderboard', icon: Trophy, path: '/admin/scoreboard', roles: [ 'company_admin'] },
   { label: 'Manage Clients', icon: Users, path: '/admin/clients', roles: ['super_admin', 'company_admin'] },
   { label: 'Manage Categories', icon: Tag, path: '/admin/categories', roles: ['super_admin', 'company_admin'] },
   { label: 'Manage Departments', icon: Building2, path: '/admin/departments', roles: [ 'company_admin'] },

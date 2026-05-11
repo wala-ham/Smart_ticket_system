@@ -29,6 +29,7 @@ import ManageCategories from "./pages/company_admin/ManageCategories";
 import ManageDepartments from '@/pages/company_admin/ManageDepartments';
 import WorklistPage      from '@/pages/customer/WorklistPage';
 import ManageWorkflows from "./pages/admin/ManageWorkflows";
+import AgentScoreboard from "./pages/admin/AgentScoreboard";
 import TicketsTreeView from "./pages/TicketsTreeView";
 import Dashboard from '@/pages/Dashboard';
 // import ClientDetail from "./pages/company_admin/ClientDetail";
@@ -109,6 +110,7 @@ const AppRoutes = () => {
         <Route path="/admin/categories" element={<ManageCategories  />} />
         <Route path="/admin/clients/:id" element={<ClientDetail />} />
         <Route path="/admin/departments" element={<ManageDepartments />} />
+        <Route path="/admin/scoreboard" element={<AgentScoreboard />} />
         <Route path="/worklist"          element={<WorklistPage />} />
         <Route path="/admin/workflows" element={<ManageWorkflows />} />
         <Route path="/dashboard" element={<Dashboard />} />

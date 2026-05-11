@@ -11,6 +11,7 @@ router.get('/stats',       isStaff, ctrl.getStats);
 router.get('/agents',      isStaff, ctrl.getAgentPerformance);
 router.get('/recent',      isStaff, ctrl.getRecentActivity);
 router.get('/ml-insights', isStaff, ctrl.getMLInsights);
+router.get('/scoreboard', isStaff, ctrl.getScoreboard);
 
 module.exports = router;
 

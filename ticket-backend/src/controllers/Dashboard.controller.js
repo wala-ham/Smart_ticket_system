@@ -100,6 +100,23 @@ exports.getStats = async (req, res) => {
   }
 };
 
+
+exports.getScoreboard = async (req, res) => {
+  try {
+    const { getAgentScoreboard, recalculateAllScores } = require('../utils/agentScoring');
+ 
+    // Recalcul optionnel si query param ?refresh=true
+    if (req.query.refresh === 'true') {
+      await recalculateAllScores(req.user.organization_id);
+    }
+ 
+    const scoreboard = await getAgentScoreboard(req.user.organization_id);
+    return res.json({ success: true, data: { agents: scoreboard, total: scoreboard.length } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 /**
  * GET /api/dashboard/agents
  */

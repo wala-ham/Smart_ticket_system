@@ -75,6 +75,27 @@ const User = sequelize.define('User', {
   last_login: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  // --- NOUVEAUX CHAMPS À AJOUTER ---
+  performance_score: {
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 0
+  },
+  tickets_resolved: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  tickets_assigned: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  avg_resolution_time: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  score_updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'users',
