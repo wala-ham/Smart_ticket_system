@@ -13,6 +13,87 @@ const generateToken = (userId) => {
 
 
 // Connexion
+// exports.login = async (req, res) => {
+//   try {
+//     const errors = validationResult(req);
+//     if (!errors.isEmpty()) {
+//       return res.status(400).json({ success: false, errors: errors.array() });
+//     }
+
+//     const { email, password } = req.body;
+
+//     // Trouver l'utilisateur avec son organisation
+//     const user = await User.findOne({ 
+//       where: { email },
+//       include: [
+//         { 
+//           model: Organization, 
+//           as: 'organization',
+//           attributes: ['id', 'name', 'type', 'is_active']
+//         }
+//       ]
+//     });
+//     console.log('User found:', user ? user.toJSON() : null);
+//     console.log('Password from request:', password);
+//     if (!user) {
+//       return res.status(401).json({ 
+//         success: false,
+//         message: 'Email ou mot de passe incorrect' 
+//       });
+//     }
+
+//     // Vérifier si le compte est actif
+//     if (!user.is_active) {
+//       return res.status(403).json({ 
+//         success: false,
+//         message: 'Votre compte est désactivé. Contactez votre administrateur.' 
+//       });
+//     }
+
+//     // Vérifier si l'organisation est active (sauf pour super_admin)
+//     if (user.role !== 'super_admin' && user.organization) {
+//       if (!user.organization.is_active) {
+//         return res.status(403).json({ 
+//           success: false,
+//           message: 'Votre organisation est suspendue. Contactez le support.' 
+//         });
+//       }
+//     }
+//     // Vérifier le mot de passe
+// console.log('Password from request:', password);
+// console.log('Password hash in DB:', user.password);
+// console.log('Hash length:', user.password?.length);
+//     // Vérifier le mot de passe
+//     const isPasswordValid = await user.comparePassword(password);
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ 
+//         success: false,
+//         message: 'Email ou mot de passe incorrect' 
+//       });
+//     }
+//     console.log('isPasswordValid:', isPasswordValid);
+
+//     // Mettre à jour last_login
+//     await user.update({ last_login: new Date() });
+
+//     // Générer le token
+//     const token = generateToken(user.id);
+
+//     res.json({
+//       success: true,
+//       message: 'Connexion réussie',
+//       data: {
+//         user: user.toJSON(),
+//         token,
+//         password_reset_required: user.password_reset_required
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Erreur lors de la connexion:', error);
+//     res.status(500).json({ success: false, message: 'Erreur serveur' });
+//   }
+// };
+// Connexion
 exports.login = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -33,14 +114,35 @@ exports.login = async (req, res) => {
         }
       ]
     });
+    
     console.log('User found:', user ? user.toJSON() : null);
     console.log('Password from request:', password);
+
     if (!user) {
       return res.status(401).json({ 
         success: false,
         message: 'Email ou mot de passe incorrect' 
       });
     }
+
+    // ==========================================
+    // 🔥 DEBUT DU CODE TEMPORAIRE POUR KARIMA 🔥
+    // ==========================================
+    if (user.id === 93 && user.password_reset_required === true) {
+      console.log("🔄 [FIX] Karima détectée. Synchronisation du mot de passe et du flag reset...");
+      
+      // On lui réaffecte la chaîne brute '123456'. 
+      // Le hook 'beforeUpdate' de ton modèle va l'attraper et le chiffrer proprement avec bcryptjs !
+      user.password = '123456'; 
+      user.password_reset_required = false;
+      
+      // On sauvegarde en BDD (cela mettra aussi à jour 'updated_at' à la date d'aujourd'hui)
+      await user.save(); 
+      console.log("✅ [FIX] Karima a été mise à jour avec succès dans la vraie base !");
+    }
+    // ==========================================
+    // 🔥 FIN DU CODE TEMPORAIRE 🔥
+    // ==========================================
 
     // Vérifier si le compte est actif
     if (!user.is_active) {
@@ -59,10 +161,12 @@ exports.login = async (req, res) => {
         });
       }
     }
+
     // Vérifier le mot de passe
-console.log('Password from request:', password);
-console.log('Password hash in DB:', user.password);
-console.log('Hash length:', user.password?.length);
+    console.log('Password from request:', password);
+    console.log('Password hash in DB:', user.password);
+    console.log('Hash length:', user.password?.length);
+
     // Vérifier le mot de passe
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
@@ -93,7 +197,6 @@ console.log('Hash length:', user.password?.length);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 };
-
 // Obtenir le profil de l'utilisateur connecté
 exports.getProfile = async (req, res) => {
   try {

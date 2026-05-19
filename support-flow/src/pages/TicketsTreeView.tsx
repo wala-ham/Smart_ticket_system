@@ -7,19 +7,25 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   RefreshCw, Search, Play, ArrowRight, ArrowLeft,
-  PauseCircle, RotateCcw, StopCircle, Eye, ChevronLeft, ChevronRight
+  PauseCircle, RotateCcw, StopCircle, Eye, ChevronLeft, ChevronRight,
+  Plus
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000';
 
 type Ticket = {
-  id: number; ticket_number?: string; subject: string;
-  status: string; priority: string;
+  id: number; 
+  ticket_number?: string; 
+  subject: string;
+  status: string; 
+  priority: string;
   category?: { name: string; color?: string };
   department?: { name: string };
-  assignee?: { full_name: string };
-  workflow_step?: string; in_worklist?: boolean;
-  started_at?: string; duration_minutes?: number;
+  assignee?: { id?: number; full_name: string };
+  workflow_step?: string; 
+  in_worklist?: boolean;
+  started_at?: string; 
+  duration_minutes?: number;
 };
 
 async function apiFetch(path: string, options: RequestInit = {}, token?: string) {
@@ -32,7 +38,7 @@ async function apiFetch(path: string, options: RequestInit = {}, token?: string)
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  open:        'bg-blue-100 text-blue-700',
+  open:         'bg-blue-100 text-blue-700',
   in_progress: 'bg-amber-100 text-amber-700',
   suspended:   'bg-orange-100 text-orange-700',
   resolved:    'bg-emerald-100 text-emerald-700',
@@ -47,7 +53,7 @@ const PRIORITY_STYLE: Record<string, string> = {
 
 // Boutons d'action disponibles selon statut
 function getActions(status: string, hasWf: boolean) {
-  if (!hasWf)                      return ['start'];
+  if (!hasWf)                   return ['start'];
   if (status === 'open')           return ['start'];
   if (status === 'in_progress')    return ['forward', 'backward', 'suspend', 'stop'];
   if (status === 'suspended')      return ['resume'];
@@ -63,13 +69,12 @@ const ACTION_CFG: Record<string, { icon: React.ReactNode; label: string; color: 
   stop:     { icon: <StopCircle className="h-3 w-3" />,    label: 'Arrêter',   color: 'text-red-600 hover:bg-red-100' },
 };
 
-// ─── Inline Comment Popup ─────────────────────────────────────────────────────
 function CommentPopup({ onConfirm, onCancel }: { onConfirm: (c: string) => void; onCancel: () => void }) {
   const [c, setC] = useState('');
   return (
     <div className="absolute z-20 right-0 top-8 w-64 bg-white border rounded-lg shadow-xl p-3 space-y-2">
       <p className="text-xs font-semibold">Raison du retour (obligatoire)</p>
-      <textarea value={c} onChange={e => setC(e.target.value)} rows={2} className="form-input w-full text-xs resize-none" placeholder="Expliquez..." />
+      <textarea value={c} onChange={e => setC(e.target.value)} rows={2} className="form-input w-full text-xs resize-none border p-1 rounded" placeholder="Expliquez..." />
       <div className="flex gap-2">
         <button onClick={() => c.trim() && onConfirm(c)} className="text-xs px-2 py-1 rounded bg-amber-600 text-white flex-1">Confirmer</button>
         <button onClick={onCancel} className="text-xs px-2 py-1 rounded border flex-1">Annuler</button>
@@ -78,12 +83,18 @@ function CommentPopup({ onConfirm, onCancel }: { onConfirm: (c: string) => void;
   );
 }
 
-// ─── Action Cell ──────────────────────────────────────────────────────────────
-function ActionCell({ ticket, token, onUpdate }: { ticket: Ticket; token: string; onUpdate: (id: number, status: string) => void }) {
+// ─── Action Cell Modifiée ──────────────────────────────────────────────────────
+function ActionCell({ ticket, token, user, onUpdate }: { ticket: Ticket; token: string; user: any; onUpdate: (id: number, status: string) => void }) {
   const [acting, setActing]           = useState(false);
   const [showComment, setShowComment] = useState(false);
 
+  // Vérification de l'identité de l'agent connecté (ex: Wala)
+  const isUserAssigned = 
+    (ticket.assignee && user && ticket.assignee.full_name === user.full_name) ||
+    (ticket.assignee?.id && user?.id && ticket.assignee.id === user.id);
+
   const doAction = async (action: string, comment?: string) => {
+    if (!isUserAssigned) return; // Sécurité supplémentaire au clic
     setActing(true);
     try {
       const methodMap: Record<string, string> = { start: 'POST', forward: 'PUT', backward: 'PUT', suspend: 'PUT', resume: 'PUT', stop: 'PUT' };
@@ -103,14 +114,27 @@ function ActionCell({ ticket, token, onUpdate }: { ticket: Ticket; token: string
 
   return (
     <div className="relative flex items-center gap-1">
-      {actions.map(action => (
-        <button key={action} disabled={acting} title={ACTION_CFG[action].label}
-          onClick={() => action === 'backward' ? setShowComment(true) : doAction(action)}
-          className={`p-1.5 rounded transition-colors ${ACTION_CFG[action].color} disabled:opacity-40`}>
-          {acting ? <div className="h-3 w-3 border border-current border-t-transparent rounded-full animate-spin" /> : ACTION_CFG[action].icon}
-        </button>
-      ))}
-      {showComment && (
+      {actions.map(action => {
+        // Un bouton est désactivé si l'action est en cours d'exécution OU si l'agent connecté n'est pas l'assigné du ticket
+        const isDisabled = acting || !isUserAssigned;
+        
+        return (
+          <button 
+            key={action} 
+            disabled={isDisabled} 
+            title={!isUserAssigned ? "Ce ticket ne vous est pas assigné" : ACTION_CFG[action].label}
+            onClick={() => action === 'backward' ? setShowComment(true) : doAction(action)}
+            className={`p-1.5 rounded transition-colors ${ACTION_CFG[action].color} disabled:opacity-30 disabled:cursor-not-allowed`}
+          >
+            {acting ? (
+              <div className="h-3 w-3 border border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              ACTION_CFG[action].icon
+            )}
+          </button>
+        );
+      })}
+      {showComment && isUserAssigned && (
         <CommentPopup
           onConfirm={c => doAction('backward', c)}
           onCancel={() => setShowComment(false)}
@@ -169,9 +193,21 @@ const TicketsTreeView: React.FC = () => {
           <h1 className="text-3xl font-bold">Tickets — Vue Liste</h1>
           <p className="text-sm text-muted-foreground mt-1">Traitement rapide avec actions workflow inline</p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
+        
+        {/* Actions du Header (Nouveau Ticket + Refresh) */}
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={() => navigate('/create-ticket')} 
+            className="gap-2 bg-indigo-600 text-white hover:bg-indigo-700"
+            size="sm"
+          >
+            <Plus className="h-4 w-4" />
+            Create a new Ticket
+          </Button>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -180,9 +216,9 @@ const TicketsTreeView: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input type="text" placeholder="Rechercher..." value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="form-input pl-10 w-full" />
+            className="form-input pl-10 w-full border p-2 rounded" />
         </div>
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="form-input w-40">
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="form-input w-40 border p-2 rounded">
           <option value="">Tous statuts</option>
           <option value="open">Open</option>
           <option value="in_progress">En cours</option>
@@ -218,16 +254,11 @@ const TicketsTreeView: React.FC = () => {
                   <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">Aucun ticket</td></tr>
                 ) : filtered.map(ticket => (
                   <tr key={ticket.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    {/* <td className="px-4 py-3">
-                      <span className="font-mono text-primary text-xs font-medium">
-                        {ticket.ticket_number ?? `TKT-${String(ticket.id).padStart(3, '0')}`}
-                      </span>
-                    </td> */}
                     <td className="px-6 py-4">
-                          <span className="font-mono text-primary font-medium">
-                            {getTicketNumber(ticket.id)}
-                          </span>
-                        </td>
+                      <span className="font-mono text-primary font-medium">
+                        {getTicketNumber(ticket.id)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 max-w-[200px]">
                       <p className="font-medium truncate">{ticket.subject}</p>
                       {ticket.department && <p className="text-xs text-muted-foreground">{ticket.department.name}</p>}
@@ -250,7 +281,8 @@ const TicketsTreeView: React.FC = () => {
                     </td>
                     {isStaff && (
                       <td className="px-4 py-3 relative">
-                        <ActionCell ticket={ticket} token={tk()} onUpdate={handleUpdate} />
+                        {/* L'utilisateur connecté (user) est toujours passé ici pour la gestion des boutons */}
+                        <ActionCell ticket={ticket} token={tk()} user={user} onUpdate={handleUpdate} />
                       </td>
                     )}
                     <td className="px-4 py-3 text-center">

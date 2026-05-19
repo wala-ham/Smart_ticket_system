@@ -96,6 +96,10 @@ const User = sequelize.define('User', {
   score_updated_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
+  },
+  job_title: {
+    type: DataTypes.STRING(100),
+    allowNull: true
   }
 }, {
   tableName: 'users',

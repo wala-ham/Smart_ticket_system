@@ -12,7 +12,7 @@ import {
   Category,
 } from '@/services/categories';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const SWATCHES = [
   '#6366F1', '#8B5CF6', '#EC4899', '#EF4444', '#F97316',
@@ -38,7 +38,6 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
 function EditRow({ cat, token, onDone }: { cat: Category; token: string; onDone: (updated: Category) => void }) {
   const [name, setName] = useState(cat.name);
   const [desc, setDesc] = useState(cat.description ?? '');
-  const [team, setTeam] = useState(cat.default_team ?? '');
   const [color, setColor] = useState(cat.color ?? '#6366F1');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -47,7 +46,8 @@ function EditRow({ cat, token, onDone }: { cat: Category; token: string; onDone:
     if (!name.trim()) return setErr('Name is required');
     setSaving(true); setErr(null);
     try {
-      const updated = await updateCategory(cat.id, { name, description: desc, default_team: team, color }, token);
+      // Conservation de la valeur default_team existante si l'API la requiert, sinon on l'omet
+      const updated = await updateCategory(cat.id, { name, description: desc, default_team: cat.default_team, color }, token);
       onDone(updated);
     } catch (e: any) {
       setErr(e?.body?.message ?? e?.message ?? 'Failed to update');
@@ -56,10 +56,9 @@ function EditRow({ cat, token, onDone }: { cat: Category; token: string; onDone:
 
   return (
     <tr className="bg-indigo-50/60 border-b">
-      <td className="px-6 py-4" colSpan={4}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-          <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-white border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Name" />
-          <input value={team} onChange={e => setTeam(e.target.value)} className="w-full px-3 py-2 bg-white border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Default Team" />
+      <td className="px-6 py-4" colSpan={3}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-white border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Nom" />
           <input value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-3 py-2 bg-white border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Description" />
         </div>
         <div className="flex items-center justify-between">
@@ -94,7 +93,6 @@ const ManageCategories: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [newTeam, setNewTeam] = useState('');
   const [newColor, setNewColor] = useState('#6366F1');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -113,7 +111,6 @@ const ManageCategories: React.FC = () => {
 
   useEffect(() => { load(); }, [token]);
 
-  // LOGIQUE DE SUPPRESSION MODALE
   const executeDelete = async () => {
     if (!catToDelete) return;
     setDeletingId(catToDelete.id);
@@ -133,7 +130,7 @@ const ManageCategories: React.FC = () => {
     if (!newName.trim()) return setCreateError('Name is required');
     setCreating(true);
     try {
-      const cat = await createCategory({ name: newName.trim(), description: newDesc, default_team: newTeam, color: newColor }, tk());
+      const cat = await createCategory({ name: newName.trim(), description: newDesc, color: newColor }, tk());
       setCategories(prev => [...prev, cat].sort((a, b) => a.name.localeCompare(b.name)));
       setShowModal(false); resetModal();
     } catch (e: any) {
@@ -142,7 +139,7 @@ const ManageCategories: React.FC = () => {
   };
 
   const resetModal = () => {
-    setNewName(''); setNewDesc(''); setNewTeam(''); setNewColor('#6366F1'); setCreateError(null);
+    setNewName(''); setNewDesc(''); setNewColor('#6366F1'); setCreateError(null);
   };
 
   const filtered = categories.filter(c =>
@@ -187,7 +184,6 @@ const ManageCategories: React.FC = () => {
                 <thead>
                   <tr className="border-b bg-muted/30 text-muted-foreground">
                     <th className="px-6 py-4 text-left font-semibold">Catégorie</th>
-                    <th className="px-6 py-4 text-left font-semibold">Équipe par défaut</th>
                     <th className="px-6 py-4 text-left font-semibold">Créée le</th>
                     <th className="px-6 py-4 text-center font-semibold">Actions</th>
                   </tr>
@@ -209,9 +205,6 @@ const ManageCategories: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          {cat.default_team ? <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">{cat.default_team}</span> : '—'}
-                        </td>
                         <td className="px-6 py-4 text-muted-foreground">
                           {cat.created_at ? new Date(cat.created_at).toLocaleDateString('fr-FR') : '—'}
                         </td>
@@ -231,7 +224,7 @@ const ManageCategories: React.FC = () => {
         </Card>
       )}
 
-      {/* MODAL SUPPRESSION (BLUE/INDIGO STYLE) */}
+      {/* MODAL SUPPRESSION */}
       {catToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-xl p-6 max-w-sm w-full shadow-2xl border border-border animate-in zoom-in-95">
@@ -269,8 +262,8 @@ const ManageCategories: React.FC = () => {
                   <input type="text" value={newName} onChange={e => setNewName(e.target.value)} className="w-full px-3 py-2 bg-muted/50 border rounded-md focus:ring-2 focus:ring-indigo-500 outline-none" required />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-muted-foreground">Équipe</label>
-                  <input type="text" value={newTeam} onChange={e => setNewTeam(e.target.value)} className="w-full px-3 py-2 bg-muted/50 border rounded-md focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Description</label>
+                  <input type="text" value={newDesc} onChange={e => setNewDesc(e.target.value)} className="w-full px-3 py-2 bg-muted/50 border rounded-md focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Description facultative" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase text-muted-foreground">Couleur</label>

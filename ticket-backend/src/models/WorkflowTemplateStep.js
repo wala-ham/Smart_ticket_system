@@ -21,6 +21,11 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Libellé de l\'étape ex: "Analyse DT", "Correction Dev"',
     },
+    role_label: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'Libellé du rôle ex: "Analyste", "Développeur"',
+    },
 
     role: {
       type: DataTypes.STRING(50),

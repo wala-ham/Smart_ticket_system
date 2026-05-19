@@ -44,7 +44,7 @@ const navItems: NavItem[] = [
   { label: 'Manage Clients', icon: Users, path: '/admin/clients', roles: ['super_admin', 'company_admin'] },
   { label: 'Manage Categories', icon: Tag, path: '/admin/categories', roles: ['super_admin', 'company_admin'] },
   { label: 'Manage Departments', icon: Building2, path: '/admin/departments', roles: [ 'company_admin'] },
-  { label: 'Manage Tickets', icon: Ticket, path: '/admin/tickets', roles: ['super_admin', 'company_admin'] },
+  { label: 'Manage Tickets', icon: Ticket, path: '/admin/tickets', roles: ['super_admin'] },
   { label: 'Worklist', icon: ListChecks, path: '/worklist', roles: ['company_admin'] }, 
   { label: 'Manage Workflow', icon: Workflow, path: '/admin/workflows', roles: ['company_admin'] }, 
   { label: 'Workflow Tickets', icon: GitBranch , path: '/tickets/tree', roles: ['company_admin'] }, 

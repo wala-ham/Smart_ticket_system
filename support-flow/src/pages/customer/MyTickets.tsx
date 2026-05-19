@@ -1,362 +1,321 @@
+// src/pages/TicketsTreeView.tsx
+// Vue Tree : liste de tickets avec actions workflow inline (sans ouvrir la fiche)
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Eye, Edit2, Search, ChevronLeft, ChevronRight, Filter, Plus, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { listTickets, Ticket } from '@/services/tickets';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  RefreshCw, Search, Play, ArrowRight, ArrowLeft,
+  PauseCircle, RotateCcw, StopCircle, Eye, ChevronLeft, ChevronRight,
+  Plus
+} from 'lucide-react';
 
-const MyTickets: React.FC = () => {
-  const { token } = useAuth();
-  const navigate = useNavigate();
+const API_BASE = 'http://localhost:5000';
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+type Ticket = {
+  id: number; 
+  ticket_number?: string; 
+  subject: string;
+  status: string; 
+  priority: string;
+  category?: { name: string; color?: string };
+  department?: { name: string };
+  assignee?: { id?: number; full_name: string };
+  workflow_step?: string; 
+  in_worklist?: boolean;
+  started_at?: string; 
+  duration_minutes?: number;
+};
 
-  const [status, setStatus] = useState<string>('');
-  const [priority, setPriority] = useState<string>('');
-  const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(10);
-  const [total, setTotal] = useState<number | null>(null);
+async function apiFetch(path: string, options: RequestInit = {}, token?: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res  = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) { const e: any = new Error(json?.message ?? 'Error'); e.body = json; throw e; }
+  return json;
+}
 
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      const effectiveToken = token ?? localStorage.getItem('auth_token');
-      if (!effectiveToken) {
-        setError('Not authenticated (no token)');
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await listTickets(
-          { status: status || undefined, priority: priority || undefined, page, limit },
-          effectiveToken
+const STATUS_STYLE: Record<string, string> = {
+  open:         'bg-blue-100 text-blue-700',
+  in_progress: 'bg-amber-100 text-amber-700',
+  suspended:   'bg-orange-100 text-orange-700',
+  resolved:    'bg-emerald-100 text-emerald-700',
+  closed:      'bg-slate-100 text-slate-600',
+};
+const PRIORITY_STYLE: Record<string, string> = {
+  critical: 'bg-red-100 text-red-700',
+  high:     'bg-orange-100 text-orange-700',
+  medium:   'bg-blue-100 text-blue-700',
+  low:      'bg-green-100 text-green-700',
+};
+
+// Boutons d'action disponibles selon statut
+function getActions(status: string, hasWf: boolean) {
+  if (!hasWf)                   return ['start'];
+  if (status === 'open')           return ['start'];
+  if (status === 'in_progress')    return ['forward', 'backward', 'suspend', 'stop'];
+  if (status === 'suspended')      return ['resume'];
+  return [];
+}
+
+const ACTION_CFG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  start:    { icon: <Play className="h-3 w-3" />,          label: 'Démarrer',  color: 'text-indigo-600 hover:bg-indigo-100' },
+  forward:  { icon: <ArrowRight className="h-3 w-3" />,    label: 'Suivant',   color: 'text-emerald-600 hover:bg-emerald-100' },
+  backward: { icon: <ArrowLeft className="h-3 w-3" />,     label: 'Précédent', color: 'text-amber-600 hover:bg-amber-100' },
+  suspend:  { icon: <PauseCircle className="h-3 w-3" />,   label: 'Suspendre', color: 'text-orange-600 hover:bg-orange-100' },
+  resume:   { icon: <RotateCcw className="h-3 w-3" />,     label: 'Reprendre', color: 'text-blue-600 hover:bg-blue-100' },
+  stop:     { icon: <StopCircle className="h-3 w-3" />,    label: 'Arrêter',   color: 'text-red-600 hover:bg-red-100' },
+};
+
+function CommentPopup({ onConfirm, onCancel }: { onConfirm: (c: string) => void; onCancel: () => void }) {
+  const [c, setC] = useState('');
+  return (
+    <div className="absolute z-20 right-0 top-8 w-64 bg-white border rounded-lg shadow-xl p-3 space-y-2">
+      <p className="text-xs font-semibold">Raison du retour (obligatoire)</p>
+      <textarea value={c} onChange={e => setC(e.target.value)} rows={2} className="form-input w-full text-xs resize-none border p-1 rounded" placeholder="Expliquez..." />
+      <div className="flex gap-2">
+        <button onClick={() => c.trim() && onConfirm(c)} className="text-xs px-2 py-1 rounded bg-amber-600 text-white flex-1">Confirmer</button>
+        <button onClick={onCancel} className="text-xs px-2 py-1 rounded border flex-1">Annuler</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Action Cell Modifiée ──────────────────────────────────────────────────────
+function ActionCell({ ticket, token, user, onUpdate }: { ticket: Ticket; token: string; user: any; onUpdate: (id: number, status: string) => void }) {
+  const [acting, setActing]           = useState(false);
+  const [showComment, setShowComment] = useState(false);
+
+  // Vérification de l'identité de l'agent connecté (ex: Wala)
+  const isUserAssigned = 
+    (ticket.assignee && user && ticket.assignee.full_name === user.full_name) ||
+    (ticket.assignee?.id && user?.id && ticket.assignee.id === user.id);
+
+  const doAction = async (action: string, comment?: string) => {
+    if (!isUserAssigned) return; // Sécurité supplémentaire au clic
+    setActing(true);
+    try {
+      const methodMap: Record<string, string> = { start: 'POST', forward: 'PUT', backward: 'PUT', suspend: 'PUT', resume: 'PUT', stop: 'PUT' };
+      const body = comment ? { comment } : {};
+      const res = await apiFetch(`/api/tickets/${ticket.id}/workflow/${action}`, { method: methodMap[action], body: JSON.stringify(body) }, token);
+      const newStatus =
+        action === 'stop'    ? 'resolved'    :
+        action === 'suspend' ? 'suspended'   :
+        action === 'resume'  ? 'in_progress' :
+        res?.data?.completed ? 'resolved'    : 'in_progress';
+      onUpdate(ticket.id, newStatus);
+    } catch (e: any) { alert(e?.body?.message ?? e?.message); }
+    finally { setActing(false); setShowComment(false); }
+  };
+
+  const actions = getActions(ticket.status, !!ticket.workflow_step);
+
+  return (
+    <div className="relative flex items-center gap-1">
+      {actions.map(action => {
+        // Un bouton est désactivé si l'action est en cours d'exécution OU si l'agent connecté n'est pas l'assigné du ticket
+        const isDisabled = acting || !isUserAssigned;
+        
+        return (
+          <button 
+            key={action} 
+            disabled={isDisabled} 
+            title={!isUserAssigned ? "Ce ticket ne vous est pas assigné" : ACTION_CFG[action].label}
+            onClick={() => action === 'backward' ? setShowComment(true) : doAction(action)}
+            className={`p-1.5 rounded transition-colors ${ACTION_CFG[action].color} disabled:opacity-30 disabled:cursor-not-allowed`}
+          >
+            {acting ? (
+              <div className="h-3 w-3 border border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              ACTION_CFG[action].icon
+            )}
+          </button>
         );
-        if (!mounted) return;
-        setTickets(res.tickets ?? []);
-        setTotal(res.total ?? null);
-      } catch (err: any) {
-        if (err?.status === 401) setError('Unauthorized - token invalid/expired');
-        else setError(err?.body?.message || err?.message || 'Failed to load tickets');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    return () => { mounted = false; };
-  }, [token, status, priority, page, limit]);
-
-  const filteredTickets = tickets.filter(t =>
-    t.ticket_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.subject?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const getStatusBadge = (s: string) => {
-  const styles: Record<string, { bg: string; text: string }> = {
-    open:       { bg: 'bg-blue-100',    text: 'text-blue-700' },
-    in_progress: { bg: 'bg-amber-100',   text: 'text-amber-700' },
-    resolved:   { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-    closed:     { bg: 'bg-slate-100',   text: 'text-slate-700' },
-  };
-
-  // Valeur par défaut si status inconnu
-  const style = styles[s] || styles.open;
-
-  // Première lettre en majuscule + reste en minuscule
-  const label = s
-    .toLowerCase()
-    .replace('_', ' ')
-    .replace(/^\w/, (c) => c.toUpperCase());
-
-  return (
-    <div
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full ${style.bg} ${style.text} text-xs font-semibold`}
-    >
-      {label}
-    </div>
-  );
-};
-
-const getPriorityBadge = (p: string) => {
-  const styles: Record<string, { bg: string; text: string }> = {
-    low:      { bg: 'bg-green-100',  text: 'text-green-700' },
-    medium:   { bg: 'bg-blue-100',   text: 'text-blue-700' },
-    high:     { bg: 'bg-orange-100', text: 'text-orange-700' },
-    critical: { bg: 'bg-red-100',    text: 'text-red-700' },
-  };
-
-  // Valeur par défaut si priorité inconnue
-  const style = styles[p] || styles.medium;
-
-  // Première lettre en majuscule + reste en minuscule
-  const label = p
-    .toLowerCase()
-    .replace(/^\w/, (c) => c.toUpperCase());
-
-  return (
-    <div
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full ${style.bg} ${style.text} text-xs font-semibold`}
-    >
-      {label}
-    </div>
-  );
-};
-
-  const getTicketNumber = (id: number) => `TKT-${String(id).padStart(3, '0')}`;
-
-  const generateFakeAIConfidence = (id: number) => {
-    const seed = (id * 7) % 100;
-    return 65 + (seed % 35);
-  };
-
-  const formatDate = (iso?: string) =>
-    iso ? new Date(iso).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
-
-  const handleViewDetails = (id: number) => navigate(`/tickets/${id}`);
-  const handleEdit = (id: number) => navigate(`/tickets/${id}/edit`);
-
-  const handleReset = () => {
-    setStatus('');
-    setPriority('');
-    setPage(1);
-    setSearchQuery('');
-  };
-
-  return (
-    <div className="space-y-6 p-6">
-      {/* Header with Search & Filters */}
-      <div className="flex flex-col gap-4">
-        {/* Title & Create Button */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">My Tickets</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage and track your support tickets</p>
-          </div>
-          <Link to="/create-ticket">
-          <Button className="btn-gradient">
-            <Plus className="h-4 w-4 mr-2" />
-            Create New Ticket
-          </Button>
-        </Link>
-        </div>
-
-        {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search by ticket ID or subject..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="form-input pl-10"
-          />
-        </div>
-        <div className="flex gap-3">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-36">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="resolved">Resolved</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priority</SelectItem>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="text-center">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"></div>
-            <p className="mt-3 text-muted-foreground">Loading tickets...</p>
-          </div>
-        </div>
-      ) : error ? (
-        <Card className="border-destructive bg-destructive/5">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-destructive font-medium">⚠️ {error}</p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : filteredTickets.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-12">
-              <p className="text-muted-foreground text-lg">No tickets found</p>
-              <Button variant="outline" onClick={handleReset} className="mt-4">
-                Clear filters
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          {/* Table */}
-          <Card className="border-0 shadow-md">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-gradient-to-r from-muted/50 to-muted/30">
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">Ticket</th>
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">Subject</th>
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">Status</th>
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">Priority</th>
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">Created</th>
-                      <th className="px-6 py-4 text-left font-semibold text-foreground">AI Confidence</th>
-                      <th className="px-6 py-4 text-center font-semibold text-foreground">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTickets.map((ticket, idx) => (
-                      <tr key={ticket.id} className="cursor-pointer" onClick={() => navigate(`/tickets/${ticket.id}`)}>
-                        {/* Ticket Number */}
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-primary font-medium">
-                            {getTicketNumber(ticket.id)}
-                          </span>
-                        </td>
-
-                        {/* Subject */}
-                        <td className="px-6 py-4 max-w-sm">
-                          <p className="font-medium text-foreground line-clamp-1">{ticket.subject}</p>
-                          {ticket.description && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{ticket.description}</p>
-                          )}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-6 py-4">
-                          {getStatusBadge(ticket.status || 'open')}
-                        </td>
-
-                        {/* Priority */}
-                        <td className="px-6 py-4">
-                          {getPriorityBadge(ticket.priority || 'medium')}
-                        </td>
-
-                        {/* Created At */}
-                        <td className="px-6 py-4 text-sm text-muted-foreground">
-                          {formatDate(ticket.created_at)}
-                        </td>
-
-                        {/* AI Confidence - FIXED */}
-                        <td className="px-6 py-4">
-                      {ticket.ai_category_confidence !== null && ticket.ai_category_confidence !== undefined ? (
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          {Math.round(ticket.ai_category_confidence)}%
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 btn-gradient text-xs font-semibold">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          94%
-                        </div>
-                      )}
-                    </td>
-
-                        {/* Actions */}
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewDetails(ticket.id)}
-                              title="View Details"
-                              className="h-9 w-9 p-0 hover:bg-blue-100 hover:text-blue-600"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(ticket.id)}
-                              title="Edit Ticket"
-                              className="h-9 w-9 p-0 hover:bg-amber-100 hover:text-amber-600"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pagination */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="text-sm text-muted-foreground">
-              {total !== null ? (
-                <span className="font-medium">
-                  Showing <span className="text-foreground">{Math.min((page - 1) * limit + 1, total)}</span> - 
-                  <span className="text-foreground ml-1">{Math.min(page * limit, total)}</span> of 
-                  <span className="text-foreground ml-1">{total}</span> tickets
-                </span>
-              ) : (
-                <span>Page <span className="text-foreground">{page}</span></span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="gap-1"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(p => p + 1)}
-                className="gap-1"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </>
+      })}
+      {showComment && isUserAssigned && (
+        <CommentPopup
+          onConfirm={c => doAction('backward', c)}
+          onCancel={() => setShowComment(false)}
+        />
       )}
     </div>
   );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+const TicketsTreeView: React.FC = () => {
+  const { token, user } = useAuth();
+  const navigate        = useNavigate();
+
+  const [tickets, setTickets]   = useState<Ticket[]>([]);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [search, setSearch]     = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage]         = useState(1);
+  const [total, setTotal]       = useState(0);
+  const LIMIT = 15;
+
+  const tk = () => token ?? localStorage.getItem('auth_token') ?? '';
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      const qs = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      if (statusFilter) qs.append('status', statusFilter);
+      if (search)       qs.append('search', search);
+      const json = await apiFetch(`/api/tickets?${qs}`, {}, tk());
+      setTickets(json?.data?.tickets ?? []);
+      setTotal(json?.data?.pagination?.total ?? 0);
+    } catch (e: any) { setError(e?.message ?? 'Erreur'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [token, page, statusFilter]);
+
+  const handleUpdate = (id: number, status: string) => {
+    setTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+  };
+
+  const filtered = search
+    ? tickets.filter(t => t.subject.toLowerCase().includes(search.toLowerCase()) || t.ticket_number?.toLowerCase().includes(search.toLowerCase()))
+    : tickets;
+
+  const isStaff = ['super_admin', 'company_admin', 'employee'].includes(user?.role ?? '');
+  const getTicketNumber = (id: number) => `TKT-${String(id).padStart(3, '0')}`;
+
+  return (
+    <div className="space-y-4 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Tickets — Vue Liste</h1>
+          <p className="text-sm text-muted-foreground mt-1">Traitement rapide avec actions workflow inline</p>
+        </div>
+        
+        {/* Actions du Header (Nouveau Ticket + Refresh) */}
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={() => navigate('/create-ticket')} 
+            className="gap-2 bg-indigo-600 text-white hover:bg-indigo-700"
+            size="sm"
+          >
+            <Plus className="h-4 w-4" />
+            Create a new Ticket
+          </Button>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input type="text" placeholder="Rechercher..." value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="form-input pl-10 w-full border p-2 rounded" />
+        </div>
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="form-input w-40 border p-2 rounded">
+          <option value="">Tous statuts</option>
+          <option value="open">Open</option>
+          <option value="in_progress">En cours</option>
+          <option value="suspended">Suspendu</option>
+          <option value="resolved">Résolu</option>
+          <option value="closed">Fermé</option>
+        </select>
+      </div>
+
+      {error && <p className="text-destructive text-sm">{error}</p>}
+
+      {/* Table */}
+      <Card className="border-0 shadow-md">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gradient-to-r from-muted/50 to-muted/30 text-xs">
+                  <th className="px-4 py-3 text-left font-semibold">Ticket</th>
+                  <th className="px-4 py-3 text-left font-semibold">Sujet</th>
+                  <th className="px-4 py-3 text-left font-semibold">Statut</th>
+                  <th className="px-4 py-3 text-left font-semibold">Priorité</th>
+                  <th className="px-4 py-3 text-left font-semibold">Catégorie</th>
+                  <th className="px-4 py-3 text-left font-semibold">Assigné</th>
+                  {isStaff && <th className="px-4 py-3 text-left font-semibold">Actions WF</th>}
+                  <th className="px-4 py-3 text-center font-semibold">Voir</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">Chargement...</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">Aucun ticket</td></tr>
+                ) : filtered.map(ticket => (
+                  <tr key={ticket.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-primary font-medium">
+                        {getTicketNumber(ticket.id)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <p className="font-medium truncate">{ticket.subject}</p>
+                      {ticket.department && <p className="text-xs text-muted-foreground">{ticket.department.name}</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLE[ticket.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {ticket.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${PRIORITY_STYLE[ticket.priority] ?? 'bg-slate-100'}`}>
+                        {ticket.priority}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {ticket.category?.name ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {ticket.assignee?.full_name ?? <span className="text-muted-foreground italic">Non assigné</span>}
+                    </td>
+                    {isStaff && (
+                      <td className="px-4 py-3 relative">
+                        {/* L'utilisateur connecté (user) est toujours passé ici pour la gestion des boutons */}
+                        <ActionCell ticket={ticket} token={tk()} user={user} onUpdate={handleUpdate} />
+                      </td>
+                    )}
+                    <td className="px-4 py-3 text-center">
+                      <button onClick={() => navigate(`/tickets/${ticket.id}`)}
+                        className="p-1.5 rounded hover:bg-blue-100 hover:text-blue-600 transition-colors">
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-sm">
+        <p className="text-muted-foreground">
+          {total} ticket{total !== 1 ? 's' : ''} au total
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="gap-1">
+            <ChevronLeft className="h-4 w-4" /> Préc
+          </Button>
+          <span className="flex items-center px-3 text-xs">Page {page}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * LIMIT >= total} className="gap-1">
+            Suiv <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-export default MyTickets;
+export default TicketsTreeView;
