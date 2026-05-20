@@ -87,22 +87,39 @@ export const TicketWorkflow: React.FC<{
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // Droits d'accès placés ici pour être accessibles plus haut
   const isStaff = ['super_admin', 'company_admin', 'employee'].includes(userRole ?? '');
   const isAdmin = ['super_admin', 'company_admin'].includes(userRole ?? '');
 
   const load = async () => {
     setLoading(true);
     try {
+      // 1. Charger l'état du workflow
       const json = await api(`/api/tickets/${ticketId}/workflow/state`, {}, token);
-      setState(json?.data?.state ?? null);
+      const fetchedState = json?.data?.state ?? null;
+      setState(fetchedState);
       setHistory(json?.data?.history ?? []);
-      // Charger billing si ticket résolu
-      try {
-        const bj = await api(`/api/tickets/${ticketId}/billing`, {}, token);
-        setBilling(bj?.data?.billing ?? null);
-      } catch { setBilling(null); }
-    } catch { setState(null); }
-    finally { setLoading(false); }
+      
+      const wfStatus = fetchedState?.status ?? '';
+
+      // 2. CORRECTION : Charger le billing UNIQUEMENT si le workflow est terminé ET que l'utilisateur est Admin
+      if (wfStatus === 'completed' && isAdmin) {
+        try {
+          const bj = await api(`/api/tickets/${ticketId}/billing`, {}, token);
+          setBilling(bj?.data?.billing ?? null);
+        } catch (billingError) {
+          // Si le backend renvoie 404 parce que la facture n'est pas encore créée (mais que le bouton doit s'afficher)
+          setBilling(null);
+        }
+      } else {
+        setBilling(null);
+      }
+
+    } catch (e) {
+      setState(null);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, [ticketId]);
 

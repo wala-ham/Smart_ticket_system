@@ -94,6 +94,7 @@ const generateToken = (userId) => {
 //   }
 // };
 // Connexion
+// Connexion
 exports.login = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -104,8 +105,10 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     // Trouver l'utilisateur avec son organisation
+    // 💡 AJOUT : attributes: { include: ['password'] } pour forcer la récupération du mot de passe caché
     const user = await User.findOne({ 
       where: { email },
+      attributes: { include: ['password'] }, 
       include: [
         { 
           model: Organization, 
@@ -126,19 +129,17 @@ exports.login = async (req, res) => {
     }
 
     // ==========================================
-    // 🔥 DEBUT DU CODE TEMPORAIRE POUR KARIMA 🔥
+    // 🔥 CORRECTION DU CODE TEMPORAIRE 🔥
     // ==========================================
-    if (user.id === 93 && user.password_reset_required === true) {
-      console.log("🔄 [FIX] Karima détectée. Synchronisation du mot de passe et du flag reset...");
+    // Changement de l'ID à 54 (l'ID réel de Karima dans vos logs)
+    if (user.id === 54 && user.password_reset_required === true) {
+      console.log("🔄 [FIX] Karima détectée. Synchronisation du mot de passe...");
       
-      // On lui réaffecte la chaîne brute '123456'. 
-      // Le hook 'beforeUpdate' de ton modèle va l'attraper et le chiffrer proprement avec bcryptjs !
       user.password = '123456'; 
-      user.password_reset_required = false;
+      user.password_reset_required = false; // Désactivé pour éviter la boucle au premier login
       
-      // On sauvegarde en BDD (cela mettra aussi à jour 'updated_at' à la date d'aujourd'hui)
       await user.save(); 
-      console.log("✅ [FIX] Karima a été mise à jour avec succès dans la vraie base !");
+      console.log("✅ [FIX] Karima mise à jour avec le mot de passe chiffré !");
     }
     // ==========================================
     // 🔥 FIN DU CODE TEMPORAIRE 🔥

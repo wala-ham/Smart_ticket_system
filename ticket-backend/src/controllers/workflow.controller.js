@@ -30,14 +30,49 @@ async function notifyAll(users, subject, text) {
 
 // ─── Résoudre l'assignation selon OR / AND ────────────────────────────────────
 // Retourne { assignedUser, andUsers, assigned_to }
-async function resolveStepAssignment(step, organizationId) {
-  if (step.assignment_type === 'AND') {
-    const andUsers = await findAllAgentsForStep(step, organizationId);
-    return { assignedUser: null, andUsers, assigned_to: null };
-  } else {
-    const assignedUser = await findBestAgent(step, organizationId);
-    return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
+// async function resolveStepAssignment(step, organizationId) {
+//   if (step.assignment_type === 'AND') {
+//     const andUsers = await findAllAgentsForStep(step, organizationId);
+//     return { assignedUser: null, andUsers, assigned_to: null };
+//   } else {
+//     const assignedUser = await findBestAgent(step, organizationId);
+//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
+//   }
+// }
+// ─── Résoudre l'assignation selon l'utilisateur fixe ou le scoring ─────────
+// async function resolveStepAssignment(step, organizationId) {
+//   // 1. Si l'étape du workflow possède un utilisateur explicitement assigné de manière statique
+//   if (step.user_id) {
+//     const assignedUser = await User.findByPk(step.user_id);
+//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
+//   }
+
+//   // 2. Comportement par défaut (votre code actuel) si aucun utilisateur n'est figé
+//   if (step.assignment_type === 'AND') {
+//     const andUsers = await findAllAgentsForStep(step, organizationId);
+//     return { assignedUser: null, andUsers, assigned_to: null };
+//   } else {
+//     const assignedUser = await findBestAgent(step, organizationId);
+//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
+//   }
+// }
+async function resolveStepAssignment(step) {
+
+  // utilisateur fixe obligatoire
+  if (!step.user_id) {
+    throw new Error(
+      `No assigned user for step ${step.label}`
+    );
   }
+
+  const assignedUser =
+    await User.findByPk(step.user_id);
+
+  return {
+    assignedUser,
+    andUsers: [],
+    assigned_to: assignedUser?.id ?? null
+  };
 }
 
 // ─── CRUD Templates ───────────────────────────────────────────────────────────
@@ -76,32 +111,106 @@ exports.getTemplateById = async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };
 
+// exports.createTemplate = async (req, res) => {
+//   const t = await sequelize.transaction();
+//   try {
+//     const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
+//     if (!name?.trim()) throw new Error('name is required');
+//     if (!steps.length) throw new Error('At least one step is required');
+//     const template = await WorkflowTemplate.create(
+//       { name: name.trim(), category_id, organization_id: req.user.organization_id, context, is_active },
+//       { transaction: t }
+//     );
+//     await WorkflowTemplateStep.bulkCreate(
+//       steps.map((s, i) => ({
+//         template_id:     template.id,
+//         step_order:      s.step_order ?? i + 1,
+//         label:           s.label,
+//         role_label:      s.role_label ?? s.label,  // ← role métier ex: "Directeur Technique"
+//         role:            s.role ?? null,             // ← role système (optionnel)
+//         assignment_type: s.assignment_type ?? 'OR',
+//         department_id:   s.department_id ?? null,
+//       })),
+//       { transaction: t }
+//     );
+//     await t.commit();
+//     const created = await WorkflowTemplate.findByPk(template.id, {
+//       include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
+//     });
+//     return res.status(201).json({ success: true, data: { template: created } });
+//   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
+// };
+
+// exports.updateTemplate = async (req, res) => {
+//   const t = await sequelize.transaction();
+//   try {
+//     const { name, category_id, context, is_active, steps } = req.body;
+//     const template = await WorkflowTemplate.findByPk(req.params.id);
+//     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+//     await template.update({ name: name?.trim() ?? template.name, category_id, context, is_active }, { transaction: t });
+//     if (Array.isArray(steps)) {
+//       await WorkflowTemplateStep.destroy({ where: { template_id: template.id }, transaction: t });
+//       await WorkflowTemplateStep.bulkCreate(
+//         steps.map((s, i) => ({
+//           template_id:     template.id,
+//           step_order:      s.step_order ?? i + 1,
+//           label:           s.label,
+//           role_label:      s.role_label ?? s.label,
+//           role:            s.role ?? null,
+//           assignment_type: s.assignment_type ?? 'OR',
+//           department_id:   s.department_id ?? null,
+//         })),
+//         { transaction: t }
+//       );
+//     }
+//     await t.commit();
+//     const updated = await WorkflowTemplate.findByPk(template.id, {
+//       include: [
+//         { model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] },
+//         { model: Category, as: 'category', attributes: ['id','name'] },
+//       ],
+//     });
+//     return res.json({ success: true, data: { template: updated } });
+//   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
+// };
+
+
+
+
 exports.createTemplate = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
+    // const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
+    const { name, category_id, is_active = true, steps = [] } = req.body;
+    const context = 'client'; // Contexte figé à "client" pour éviter les erreurs de contexte lors de l'exécution du workflow
     if (!name?.trim()) throw new Error('name is required');
     if (!steps.length) throw new Error('At least one step is required');
+    
     const template = await WorkflowTemplate.create(
       { name: name.trim(), category_id, organization_id: req.user.organization_id, context, is_active },
       { transaction: t }
     );
+
+    // MAPPER ICI : Enregistrement de la propriété user_id pour figer Mohamed ou Ali
     await WorkflowTemplateStep.bulkCreate(
       steps.map((s, i) => ({
         template_id:     template.id,
         step_order:      s.step_order ?? i + 1,
         label:           s.label,
-        role_label:      s.role_label ?? s.label,  // ← role métier ex: "Directeur Technique"
-        role:            s.role ?? null,             // ← role système (optionnel)
+        role_label:      s.role_label ?? s.label,
+        role:            s.role ?? null,
         assignment_type: s.assignment_type ?? 'OR',
         department_id:   s.department_id ?? null,
+        user_id:         s.user_id ?? null, // <- Propriété mappée
       })),
       { transaction: t }
     );
+
     await t.commit();
     const created = await WorkflowTemplate.findByPk(template.id, {
       include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
     });
+    console.log(JSON.stringify(steps, null, 2));
     return res.status(201).json({ success: true, data: { template: created } });
   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
 };
@@ -112,9 +221,13 @@ exports.updateTemplate = async (req, res) => {
     const { name, category_id, context, is_active, steps } = req.body;
     const template = await WorkflowTemplate.findByPk(req.params.id);
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    
     await template.update({ name: name?.trim() ?? template.name, category_id, context, is_active }, { transaction: t });
+    
     if (Array.isArray(steps)) {
       await WorkflowTemplateStep.destroy({ where: { template_id: template.id }, transaction: t });
+      
+      // MAPPER ICI AUSSI : Réécriture des étapes avec support du user_id fixe
       await WorkflowTemplateStep.bulkCreate(
         steps.map((s, i) => ({
           template_id:     template.id,
@@ -124,10 +237,12 @@ exports.updateTemplate = async (req, res) => {
           role:            s.role ?? null,
           assignment_type: s.assignment_type ?? 'OR',
           department_id:   s.department_id ?? null,
+          user_id:         s.user_id ?? null, // <- Propriété mappée lors de la mise à jour
         })),
         { transaction: t }
       );
     }
+    
     await t.commit();
     const updated = await WorkflowTemplate.findByPk(template.id, {
       include: [
@@ -138,6 +253,7 @@ exports.updateTemplate = async (req, res) => {
     return res.json({ success: true, data: { template: updated } });
   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
 };
+
 
 exports.deleteTemplate = async (req, res) => {
   try {
