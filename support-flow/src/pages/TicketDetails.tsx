@@ -814,7 +814,7 @@ const TicketDetails: React.FC = () => {
             </div>
           )} */}
           <>
-  {canEscalate && (
+  {/* {canEscalate && (
     <div className="p-4 rounded-lg border border-amber-200 bg-amber-50/50 space-y-3 shadow-sm">
       <div>
         <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
@@ -834,7 +834,7 @@ const TicketDetails: React.FC = () => {
         Escalader le Ticket
       </Button>
     </div>
-  )}
+  )} */}
 
   {/* MODAL DE CONFIRMATION STYLISÉE */}
   {isEscalateModalOpen && (
