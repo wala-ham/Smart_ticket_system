@@ -7,10 +7,10 @@ const {
   TicketWorkflowState, WorkflowHistory, TicketBilling,
   Ticket, User, Category, Department,
 } = require('../models/associations');
-const { sendEmail }                                         = require('../utils/email');
-const { findBestAgent, findAllAgentsForStep, updateAgentScore } = require('../utils/agentScoring');
+const { sendEmail }       = require('../utils/email');
+const { updateAgentScore } = require('../utils/agentScoring');
 
-exports.findBestEmployeeInternal = (step, orgId) => findBestAgent(step, orgId);
+exports.findBestEmployeeInternal = () => { throw new Error('Not used in fixed-user mode'); };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function calcMinutes(start, end) {
@@ -28,51 +28,29 @@ async function notifyAll(users, subject, text) {
   await Promise.all(users.map(u => notifyUser(u, subject, text)));
 }
 
-// ─── Résoudre l'assignation selon OR / AND ────────────────────────────────────
-// Retourne { assignedUser, andUsers, assigned_to }
-// async function resolveStepAssignment(step, organizationId) {
-//   if (step.assignment_type === 'AND') {
-//     const andUsers = await findAllAgentsForStep(step, organizationId);
-//     return { assignedUser: null, andUsers, assigned_to: null };
-//   } else {
-//     const assignedUser = await findBestAgent(step, organizationId);
-//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
-//   }
-// }
-// ─── Résoudre l'assignation selon l'utilisateur fixe ou le scoring ─────────
-// async function resolveStepAssignment(step, organizationId) {
-//   // 1. Si l'étape du workflow possède un utilisateur explicitement assigné de manière statique
-//   if (step.user_id) {
-//     const assignedUser = await User.findByPk(step.user_id);
-//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
-//   }
-
-//   // 2. Comportement par défaut (votre code actuel) si aucun utilisateur n'est figé
-//   if (step.assignment_type === 'AND') {
-//     const andUsers = await findAllAgentsForStep(step, organizationId);
-//     return { assignedUser: null, andUsers, assigned_to: null };
-//   } else {
-//     const assignedUser = await findBestAgent(step, organizationId);
-//     return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
-//   }
-// }
+// ─── Résoudre l'assignation : user_id obligatoire ─────────────────────────────
 async function resolveStepAssignment(step) {
-
-  // utilisateur fixe obligatoire
   if (!step.user_id) {
-    throw new Error(
-      `No assigned user for step ${step.label}`
-    );
+    throw new Error(`Aucun utilisateur assigné à l'étape "${step.label}". Veuillez en configurer un dans le template.`);
   }
+  const assignedUser = await User.findByPk(step.user_id);
+  return { assignedUser, andUsers: [], assigned_to: assignedUser?.id ?? null };
+}
 
-  const assignedUser =
-    await User.findByPk(step.user_id);
-
-  return {
-    assignedUser,
-    andUsers: [],
-    assigned_to: assignedUser?.id ?? null
-  };
+// ─── Trouver le template actif pour une catégorie + contexte ─────────────────
+async function findTemplate(templateId, categoryId, organizationId, context) {
+  if (templateId) {
+    return WorkflowTemplate.findByPk(templateId, {
+      include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }],
+    });
+  }
+  if (categoryId) {
+    return WorkflowTemplate.findOne({
+      where: { category_id: categoryId, organization_id: organizationId, context, is_active: true },
+      include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }],
+    });
+  }
+  return null;
 }
 
 // ─── CRUD Templates ───────────────────────────────────────────────────────────
@@ -85,12 +63,17 @@ exports.getAllTemplates = async (req, res) => {
     const templates = await WorkflowTemplate.findAll({
       where,
       include: [
-        { model: WorkflowTemplateStep, as: 'steps',
-          include: [{ model: Department, as: 'department', attributes: ['id','name'] }],
-          order: [['step_order','ASC']] },
-        { model: Category, as: 'category', attributes: ['id','name','color'] },
+        {
+          model: WorkflowTemplateStep, as: 'steps',
+          include: [
+            { model: Department, as: 'department', attributes: ['id', 'name'] },
+            { model: User,       as: 'assignedUser', attributes: ['id', 'full_name', 'email', 'job_title'] },
+          ],
+          order: [['step_order', 'ASC']],
+        },
+        { model: Category, as: 'category', attributes: ['id', 'name', 'color'] },
       ],
-      order: [['created_at','DESC']],
+      order: [['created_at', 'DESC']],
     });
     return res.json({ success: true, data: { templates } });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
@@ -100,10 +83,15 @@ exports.getTemplateById = async (req, res) => {
   try {
     const template = await WorkflowTemplate.findByPk(req.params.id, {
       include: [
-        { model: WorkflowTemplateStep, as: 'steps',
-          include: [{ model: Department, as: 'department', attributes: ['id','name'] }],
-          order: [['step_order','ASC']] },
-        { model: Category, as: 'category', attributes: ['id','name','color'] },
+        {
+          model: WorkflowTemplateStep, as: 'steps',
+          include: [
+            { model: Department, as: 'department', attributes: ['id', 'name'] },
+            { model: User,       as: 'assignedUser', attributes: ['id', 'full_name', 'email', 'job_title'] },
+          ],
+          order: [['step_order', 'ASC']],
+        },
+        { model: Category, as: 'category', attributes: ['id', 'name', 'color'] },
       ],
     });
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
@@ -111,87 +99,18 @@ exports.getTemplateById = async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };
 
-// exports.createTemplate = async (req, res) => {
-//   const t = await sequelize.transaction();
-//   try {
-//     const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
-//     if (!name?.trim()) throw new Error('name is required');
-//     if (!steps.length) throw new Error('At least one step is required');
-//     const template = await WorkflowTemplate.create(
-//       { name: name.trim(), category_id, organization_id: req.user.organization_id, context, is_active },
-//       { transaction: t }
-//     );
-//     await WorkflowTemplateStep.bulkCreate(
-//       steps.map((s, i) => ({
-//         template_id:     template.id,
-//         step_order:      s.step_order ?? i + 1,
-//         label:           s.label,
-//         role_label:      s.role_label ?? s.label,  // ← role métier ex: "Directeur Technique"
-//         role:            s.role ?? null,             // ← role système (optionnel)
-//         assignment_type: s.assignment_type ?? 'OR',
-//         department_id:   s.department_id ?? null,
-//       })),
-//       { transaction: t }
-//     );
-//     await t.commit();
-//     const created = await WorkflowTemplate.findByPk(template.id, {
-//       include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
-//     });
-//     return res.status(201).json({ success: true, data: { template: created } });
-//   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
-// };
-
-// exports.updateTemplate = async (req, res) => {
-//   const t = await sequelize.transaction();
-//   try {
-//     const { name, category_id, context, is_active, steps } = req.body;
-//     const template = await WorkflowTemplate.findByPk(req.params.id);
-//     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
-//     await template.update({ name: name?.trim() ?? template.name, category_id, context, is_active }, { transaction: t });
-//     if (Array.isArray(steps)) {
-//       await WorkflowTemplateStep.destroy({ where: { template_id: template.id }, transaction: t });
-//       await WorkflowTemplateStep.bulkCreate(
-//         steps.map((s, i) => ({
-//           template_id:     template.id,
-//           step_order:      s.step_order ?? i + 1,
-//           label:           s.label,
-//           role_label:      s.role_label ?? s.label,
-//           role:            s.role ?? null,
-//           assignment_type: s.assignment_type ?? 'OR',
-//           department_id:   s.department_id ?? null,
-//         })),
-//         { transaction: t }
-//       );
-//     }
-//     await t.commit();
-//     const updated = await WorkflowTemplate.findByPk(template.id, {
-//       include: [
-//         { model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] },
-//         { model: Category, as: 'category', attributes: ['id','name'] },
-//       ],
-//     });
-//     return res.json({ success: true, data: { template: updated } });
-//   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
-// };
-
-
-
-
 exports.createTemplate = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    // const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
-    const { name, category_id, is_active = true, steps = [] } = req.body;
-    const context = 'client'; // Contexte figé à "client" pour éviter les erreurs de contexte lors de l'exécution du workflow
+    const { name, category_id, context = 'supplier', is_active = true, steps = [] } = req.body;
     if (!name?.trim()) throw new Error('name is required');
     if (!steps.length) throw new Error('At least one step is required');
-    
+    if (!['supplier', 'client'].includes(context)) throw new Error("context must be 'supplier' or 'client'");
+
     const template = await WorkflowTemplate.create(
       { name: name.trim(), category_id, organization_id: req.user.organization_id, context, is_active },
       { transaction: t }
     );
-
-    // MAPPER ICI : Enregistrement de la propriété user_id pour figer Mohamed ou Ali
     await WorkflowTemplateStep.bulkCreate(
       steps.map((s, i) => ({
         template_id:     template.id,
@@ -201,16 +120,18 @@ exports.createTemplate = async (req, res) => {
         role:            s.role ?? null,
         assignment_type: s.assignment_type ?? 'OR',
         department_id:   s.department_id ?? null,
-        user_id:         s.user_id ?? null, // <- Propriété mappée
+        user_id:         s.user_id ?? null,
       })),
       { transaction: t }
     );
-
     await t.commit();
     const created = await WorkflowTemplate.findByPk(template.id, {
-      include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
+      include: [{
+        model: WorkflowTemplateStep, as: 'steps',
+        include: [{ model: User, as: 'assignedUser', attributes: ['id', 'full_name', 'email'] }],
+        order: [['step_order', 'ASC']],
+      }],
     });
-    console.log(JSON.stringify(steps, null, 2));
     return res.status(201).json({ success: true, data: { template: created } });
   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
 };
@@ -219,15 +140,12 @@ exports.updateTemplate = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { name, category_id, context, is_active, steps } = req.body;
+    if (context && !['supplier', 'client'].includes(context)) throw new Error("context must be 'supplier' or 'client'");
     const template = await WorkflowTemplate.findByPk(req.params.id);
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
-    
     await template.update({ name: name?.trim() ?? template.name, category_id, context, is_active }, { transaction: t });
-    
     if (Array.isArray(steps)) {
       await WorkflowTemplateStep.destroy({ where: { template_id: template.id }, transaction: t });
-      
-      // MAPPER ICI AUSSI : Réécriture des étapes avec support du user_id fixe
       await WorkflowTemplateStep.bulkCreate(
         steps.map((s, i) => ({
           template_id:     template.id,
@@ -237,23 +155,21 @@ exports.updateTemplate = async (req, res) => {
           role:            s.role ?? null,
           assignment_type: s.assignment_type ?? 'OR',
           department_id:   s.department_id ?? null,
-          user_id:         s.user_id ?? null, // <- Propriété mappée lors de la mise à jour
+          user_id:         s.user_id ?? null,
         })),
         { transaction: t }
       );
     }
-    
     await t.commit();
     const updated = await WorkflowTemplate.findByPk(template.id, {
       include: [
-        { model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] },
-        { model: Category, as: 'category', attributes: ['id','name'] },
+        { model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] },
+        { model: Category, as: 'category', attributes: ['id', 'name'] },
       ],
     });
     return res.json({ success: true, data: { template: updated } });
   } catch (err) { await t.rollback(); return res.status(400).json({ success: false, message: err.message }); }
 };
-
 
 exports.deleteTemplate = async (req, res) => {
   try {
@@ -266,34 +182,52 @@ exports.deleteTemplate = async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };
 
+// ─── GET /api/workflow-templates/by-category/:categoryId ─────────────────────
+// Retourne les deux templates (supplier + client) pour une catégorie donnée
+exports.getTemplatesByCategory = async (req, res) => {
+  try {
+    const templates = await WorkflowTemplate.findAll({
+      where: {
+        category_id:     req.params.categoryId,
+        organization_id: req.user.organization_id,
+        is_active:       true,
+      },
+      include: [
+        {
+          model: WorkflowTemplateStep, as: 'steps',
+          include: [{ model: User, as: 'assignedUser', attributes: ['id', 'full_name', 'email'] }],
+          order: [['step_order', 'ASC']],
+        },
+        { model: Category, as: 'category', attributes: ['id', 'name', 'color'] },
+      ],
+    });
+    const supplier = templates.find(t => t.context === 'supplier') ?? null;
+    const client   = templates.find(t => t.context === 'client')   ?? null;
+    return res.json({ success: true, data: { supplier, client } });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+};
+
 // ─── Workflow Execution ───────────────────────────────────────────────────────
 
 /**
  * POST /api/tickets/:id/workflow/start
+ * Body: { template_id?, context? }
+ * context par défaut = 'supplier' (le fournisseur commence toujours)
  */
 exports.startWorkflow = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { template_id, context = 'client' } = req.body;
+    const { template_id, context = 'supplier' } = req.body;
+    if (!['supplier', 'client'].includes(context)) throw new Error("context must be 'supplier' or 'client'");
+
     const ticket = await Ticket.findByPk(req.params.id);
     if (!ticket) throw new Error('Ticket not found');
 
     const existing = await TicketWorkflowState.findOne({ where: { ticket_id: ticket.id, status: 'active' } });
     if (existing) throw new Error('A workflow is already active on this ticket');
 
-    // Trouver le template par catégorie ou ID explicite
-    let template;
-    if (template_id) {
-      template = await WorkflowTemplate.findByPk(template_id, {
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
-      });
-    } else if (ticket.category_id) {
-      template = await WorkflowTemplate.findOne({
-        where: { category_id: ticket.category_id, organization_id: ticket.organization_id ?? req.user.organization_id, context, is_active: true },
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }],
-      });
-    }
-    if (!template) throw new Error(`No active workflow template found for category ${ticket.category_id} / context ${context}`);
+    const template = await findTemplate(template_id, ticket.category_id, ticket.organization_id ?? req.user.organization_id, context);
+    if (!template)       throw new Error(`No active ${context} workflow template found for category ${ticket.category_id}`);
     if (!template.steps?.length) throw new Error('Workflow template has no steps');
 
     const firstStep = template.steps[0];
@@ -306,8 +240,7 @@ exports.startWorkflow = async (req, res) => {
 
     await ticket.update({ status: 'in_progress', started_at: now }, { transaction: t });
 
-    // OR ou AND pour la première étape
-    const { assignedUser, andUsers, assigned_to } = await resolveStepAssignment(firstStep, req.user.organization_id);
+    const { assignedUser, assigned_to } = await resolveStepAssignment(firstStep);
     if (assigned_to) await ticket.update({ assigned_to }, { transaction: t });
 
     await WorkflowHistory.create({
@@ -315,26 +248,23 @@ exports.startWorkflow = async (req, res) => {
       step_number: firstStep.step_order, step_label: firstStep.label,
       action: 'started', acted_by: req.user.id, assigned_to,
       step_started_at: now,
-      comment: `Workflow "${template.name}" démarré — Étape 1: ${firstStep.role_label ?? firstStep.label}`,
+      comment: `Workflow "${template.name}" [${context}] démarré — Étape 1: ${firstStep.role_label ?? firstStep.label}`,
     }, { transaction: t });
 
     await t.commit();
 
-    // Notifications
     const ticketRef = ticket.ticket_number || `TKT-${ticket.id}`;
-    if (firstStep.assignment_type === 'OR' && assignedUser) {
+    if (assignedUser) {
       notifyUser(assignedUser,
         `[${ticketRef}] Ticket assigné — ${firstStep.role_label ?? firstStep.label}`,
-        `Bonjour ${assignedUser.full_name},\n\nVous avez été sélectionné pour traiter ce ticket.\n\nTicket  : ${ticket.subject}\nCircuit : ${template.name}\nÉtape   : ${firstStep.role_label ?? firstStep.label}\n\nConnectez-vous pour le traiter.`
-      );
-    } else if (firstStep.assignment_type === 'AND' && andUsers.length) {
-      notifyAll(andUsers,
-        `[${ticketRef}] Action requise (AND) — ${firstStep.role_label ?? firstStep.label}`,
-        `Bonjour,\n\nVous faites partie des intervenants requis pour cette étape.\n\nTicket  : ${ticket.subject}\nCircuit : ${template.name}\nÉtape   : ${firstStep.role_label ?? firstStep.label}\n\nLe premier à traiter fera avancer le workflow.`
+        `Bonjour ${assignedUser.full_name},\n\nVous avez été sélectionné pour traiter ce ticket (circuit ${context}).\n\nTicket  : ${ticket.subject}\nCircuit : ${template.name}\nÉtape   : ${firstStep.role_label ?? firstStep.label}\n\nConnectez-vous pour le traiter.`
       );
     }
 
-    return res.status(201).json({ success: true, data: { template_name: template.name, current_step: firstStep, assignment_type: firstStep.assignment_type, assigned_to: assignedUser ?? andUsers } });
+    return res.status(201).json({
+      success: true,
+      data: { template_name: template.name, context, current_step: firstStep, assigned_to: assignedUser },
+    });
   } catch (err) {
     await t.rollback();
     return res.status(400).json({ success: false, message: err.message });
@@ -342,7 +272,7 @@ exports.startWorkflow = async (req, res) => {
 };
 
 /**
- * PUT /api/tickets/:id/workflow/forward  ("Traiter" / "Suivant")
+ * PUT /api/tickets/:id/workflow/forward
  */
 exports.forwardWorkflow = async (req, res) => {
   const t = await sequelize.transaction();
@@ -353,7 +283,7 @@ exports.forwardWorkflow = async (req, res) => {
     const state = await TicketWorkflowState.findOne({
       where: { ticket_id: req.params.id, status: 'active' },
       include: [{ model: WorkflowTemplate, as: 'template',
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }] }],
+        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
     });
     if (!state) throw new Error('No active workflow found for this ticket');
 
@@ -363,14 +293,12 @@ exports.forwardWorkflow = async (req, res) => {
     const nextStep   = steps[currentIdx + 1];
     const ticket     = await Ticket.findByPk(req.params.id);
 
-    // Durée étape actuelle
-    const lastStarted  = await WorkflowHistory.findOne({
+    const lastStarted = await WorkflowHistory.findOne({
       where: { ticket_id: ticket.id, step_number: state.current_step, action: 'started' },
-      order: [['step_started_at','DESC']],
+      order: [['step_started_at', 'DESC']],
     });
     const stepDuration = calcMinutes(lastStarted?.step_started_at, now);
 
-    // Enregistrer le forward
     await WorkflowHistory.create({
       ticket_id: ticket.id, template_id: state.template_id,
       step_number: state.current_step, step_label: curStep?.label,
@@ -379,7 +307,7 @@ exports.forwardWorkflow = async (req, res) => {
       step_duration_minutes: stepDuration,
     }, { transaction: t });
 
-    // ── Dernière étape → workflow terminé ────────────────────────────────────
+    // Dernière étape → workflow terminé
     if (!nextStep) {
       const totalDuration = calcMinutes(ticket.started_at, now);
       await state.update({ status: 'completed', completed_at: now }, { transaction: t });
@@ -388,24 +316,21 @@ exports.forwardWorkflow = async (req, res) => {
         ticket_id: ticket.id, template_id: state.template_id,
         step_number: state.current_step, step_label: 'Fin du circuit',
         action: 'completed', acted_by: req.user.id, step_ended_at: now,
-        comment: `Workflow terminé — durée totale: ${totalDuration ?? '?'} min`,
+        comment: `Workflow [${state.context}] terminé — durée totale: ${totalDuration ?? '?'} min`,
       }, { transaction: t });
       await t.commit();
-
-      // Score agent + notif créateur
       if (ticket.assigned_to) updateAgentScore(ticket.assigned_to).catch(() => {});
-      const creator = await User.findByPk(ticket.created_by, { attributes: ['email','full_name'] });
+      const creator = await User.findByPk(ticket.created_by, { attributes: ['email', 'full_name'] });
       notifyUser(creator,
         `[${ticket.ticket_number || 'TKT-' + ticket.id}] Votre ticket a été résolu`,
-        `Bonjour ${creator?.full_name},\n\nVotre ticket "${ticket.subject}" a été traité et résolu.\nDurée de traitement : ${totalDuration ?? '?'} minutes.\n\nMerci.`
+        `Bonjour ${creator?.full_name},\n\nVotre ticket "${ticket.subject}" a été traité et résolu.\nDurée : ${totalDuration ?? '?'} min.`
       );
-      return res.json({ success: true, data: { completed: true, duration_minutes: totalDuration } });
+      return res.json({ success: true, data: { completed: true, context: state.context, duration_minutes: totalDuration } });
     }
 
-    // ── Passer à l'étape suivante ─────────────────────────────────────────────
+    // Passer à l'étape suivante
     await state.update({ current_step: nextStep.step_order }, { transaction: t });
-
-    const { assignedUser, andUsers, assigned_to } = await resolveStepAssignment(nextStep, req.user.organization_id);
+    const { assignedUser, assigned_to } = await resolveStepAssignment(nextStep);
     if (assigned_to) await ticket.update({ assigned_to }, { transaction: t });
 
     await WorkflowHistory.create({
@@ -417,29 +342,20 @@ exports.forwardWorkflow = async (req, res) => {
     }, { transaction: t });
     await t.commit();
 
-    // Notifications selon OR ou AND
     const ticketRef = ticket.ticket_number || `TKT-${ticket.id}`;
-    if (nextStep.assignment_type === 'OR' && assignedUser) {
+    if (assignedUser) {
       notifyUser(assignedUser,
         `[${ticketRef}] Action requise — ${nextStep.role_label ?? nextStep.label}`,
-        `Bonjour ${assignedUser.full_name},\n\nLe ticket "${ticket.subject}" avance dans le circuit "${state.template.name}".\n\nVotre rôle : ${nextStep.role_label ?? nextStep.label}\nÉtape ${nextStep.step_order} / ${steps.length}\n\nConnectez-vous pour traiter ce ticket.`
-      );
-    } else if (nextStep.assignment_type === 'AND' && andUsers.length) {
-      notifyAll(andUsers,
-        `[${ticketRef}] Action requise (tous) — ${nextStep.role_label ?? nextStep.label}`,
-        `Bonjour,\n\nLe ticket "${ticket.subject}" requiert votre intervention simultanée.\n\nRôle requis : ${nextStep.role_label ?? nextStep.label}\nÉtape ${nextStep.step_order} / ${steps.length}\n\nLe premier à traiter fera avancer le circuit.\n\nConnectez-vous pour traiter ce ticket.`
+        `Bonjour ${assignedUser.full_name},\n\nLe ticket "${ticket.subject}" avance dans le circuit "${state.template.name}" [${state.context}].\n\nVotre rôle : ${nextStep.role_label ?? nextStep.label}\nÉtape ${nextStep.step_order} / ${steps.length}`
       );
     }
 
     return res.json({
       success: true,
       data: {
-        completed: false,
-        current_step: nextStep,
-        step_duration_minutes: stepDuration,
-        assignment_type: nextStep.assignment_type,
-        assigned_to: assignedUser ?? andUsers,
-        role_label: nextStep.role_label,
+        completed: false, context: state.context,
+        current_step: nextStep, step_duration_minutes: stepDuration,
+        assigned_to: assignedUser, role_label: nextStep.role_label,
       },
     });
   } catch (err) {
@@ -449,8 +365,7 @@ exports.forwardWorkflow = async (req, res) => {
 };
 
 /**
- * PUT /api/tickets/:id/workflow/backward  ("Reculer")
- * Commentaire OBLIGATOIRE
+ * PUT /api/tickets/:id/workflow/backward
  */
 exports.backwardWorkflow = async (req, res) => {
   const t = await sequelize.transaction();
@@ -462,7 +377,7 @@ exports.backwardWorkflow = async (req, res) => {
     const state = await TicketWorkflowState.findOne({
       where: { ticket_id: req.params.id, status: 'active' },
       include: [{ model: WorkflowTemplate, as: 'template',
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }] }],
+        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
     });
     if (!state) throw new Error('No active workflow found');
 
@@ -480,8 +395,7 @@ exports.backwardWorkflow = async (req, res) => {
     }, { transaction: t });
 
     await state.update({ current_step: prevStep.step_order }, { transaction: t });
-
-    const { assignedUser, andUsers, assigned_to } = await resolveStepAssignment(prevStep, req.user.organization_id);
+    const { assignedUser, assigned_to } = await resolveStepAssignment(prevStep);
     if (assigned_to) await ticket.update({ assigned_to }, { transaction: t });
 
     await WorkflowHistory.create({
@@ -493,19 +407,111 @@ exports.backwardWorkflow = async (req, res) => {
     await t.commit();
 
     const ticketRef = ticket.ticket_number || `TKT-${ticket.id}`;
-    if (prevStep.assignment_type === 'OR' && assignedUser) {
+    if (assignedUser) {
       notifyUser(assignedUser,
         `[${ticketRef}] Ticket renvoyé — ${prevStep.role_label ?? prevStep.label}`,
-        `Bonjour ${assignedUser.full_name},\n\nLe ticket "${ticket.subject}" a été renvoyé à l'étape précédente.\n\nRôle : ${prevStep.role_label ?? prevStep.label}\nRaison : ${comment.trim()}\n\nConnectez-vous pour le retraiter.`
-      );
-    } else if (prevStep.assignment_type === 'AND' && andUsers.length) {
-      notifyAll(andUsers,
-        `[${ticketRef}] Ticket renvoyé (AND) — ${prevStep.role_label ?? prevStep.label}`,
-        `Bonjour,\n\nLe ticket "${ticket.subject}" a été renvoyé à votre étape.\n\nRaison : ${comment.trim()}`
+        `Bonjour ${assignedUser.full_name},\n\nLe ticket "${ticket.subject}" a été renvoyé à l'étape précédente.\n\nRôle : ${prevStep.role_label ?? prevStep.label}\nRaison : ${comment.trim()}`
       );
     }
 
-    return res.json({ success: true, data: { current_step: prevStep, role_label: prevStep.role_label, assignment_type: prevStep.assignment_type, assigned_to: assignedUser ?? andUsers } });
+    return res.json({ success: true, data: { context: state.context, current_step: prevStep, role_label: prevStep.role_label, assigned_to: assignedUser } });
+  } catch (err) {
+    await t.rollback();
+    return res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * POST /api/tickets/:id/workflow/escalate-to-client
+ * Le fournisseur n'a pas pu résoudre → on démarre le workflow client
+ */
+exports.escalateToClientWorkflow = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { comment, template_id } = req.body;
+    const now = new Date();
+
+    const ticket = await Ticket.findByPk(req.params.id);
+    if (!ticket) throw new Error('Ticket not found');
+
+    // Trouver le workflow fournisseur actif
+    const supplierState = await TicketWorkflowState.findOne({
+      where: { ticket_id: ticket.id, status: 'active', context: 'supplier' },
+    });
+    if (!supplierState) throw new Error('No active supplier workflow to escalate from');
+
+    // Fermer le workflow fournisseur
+    const supplierDuration = calcMinutes(ticket.started_at, now);
+    await supplierState.update({ status: 'escalated', completed_at: now }, { transaction: t });
+
+    await WorkflowHistory.create({
+      ticket_id: ticket.id, template_id: supplierState.template_id,
+      step_number: supplierState.current_step, step_label: 'Escalade vers client',
+      action: 'escalated', acted_by: req.user.id, step_ended_at: now,
+      comment: comment?.trim() ?? 'Escalade vers le circuit client',
+    }, { transaction: t });
+
+    // Trouver le template client
+    const clientTemplate = await findTemplate(
+      template_id,
+      ticket.category_id,
+      ticket.organization_id ?? req.user.organization_id,
+      'client'
+    );
+    if (!clientTemplate)       throw new Error('No active client workflow template found for this category');
+    if (!clientTemplate.steps?.length) throw new Error('Client workflow template has no steps');
+
+    const firstStep = clientTemplate.steps[0];
+
+    // Créer le nouveau state client
+    const clientState = await TicketWorkflowState.create({
+      ticket_id:               ticket.id,
+      template_id:             clientTemplate.id,
+      current_step:            firstStep.step_order,
+      context:                 'client',
+      status:                  'active',
+      escalated_from_state_id: supplierState.id,
+      escalated_at:            now,
+    }, { transaction: t });
+
+    // Mettre à jour le ticket
+    const { assignedUser, assigned_to } = await resolveStepAssignment(firstStep);
+    await ticket.update({
+      status:            'in_progress',
+      escalated_context: 'client',
+      escalated_at:      now,
+      assigned_to:       assigned_to ?? ticket.assigned_to,
+    }, { transaction: t });
+
+    await WorkflowHistory.create({
+      ticket_id: ticket.id, template_id: clientTemplate.id,
+      step_number: firstStep.step_order, step_label: firstStep.label,
+      action: 'started', acted_by: req.user.id, assigned_to,
+      step_started_at: now,
+      comment: `Workflow client "${clientTemplate.name}" démarré après escalade — Étape 1: ${firstStep.role_label ?? firstStep.label}`,
+    }, { transaction: t });
+
+    await t.commit();
+
+    // Notification à l'assigné de l'étape 1 client
+    const ticketRef = ticket.ticket_number || `TKT-${ticket.id}`;
+    if (assignedUser) {
+      notifyUser(assignedUser,
+        `[${ticketRef}] Ticket escaladé — Action requise — ${firstStep.role_label ?? firstStep.label}`,
+        `Bonjour ${assignedUser.full_name},\n\nCe ticket a été escaladé depuis le circuit fournisseur vers votre circuit.\n\nTicket  : ${ticket.subject}\nCircuit : ${clientTemplate.name}\nÉtape   : ${firstStep.role_label ?? firstStep.label}\nRaison  : ${comment?.trim() ?? '-'}\n\nConnectez-vous pour le traiter.`
+      );
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        escalated: true,
+        supplier_duration_minutes: supplierDuration,
+        client_template_name: clientTemplate.name,
+        current_step: firstStep,
+        assigned_to: assignedUser,
+      },
+    });
   } catch (err) {
     await t.rollback();
     return res.status(400).json({ success: false, message: err.message });
@@ -564,7 +570,7 @@ exports.stopWorkflow = async (req, res) => {
     const totalDuration = calcMinutes(ticket.started_at, now);
     await state.update({ status: 'completed', completed_at: now }, { transaction: t });
     await ticket.update({ status: 'resolved', ended_at: now, duration_minutes: totalDuration }, { transaction: t });
-    await WorkflowHistory.create({ ticket_id: ticket.id, template_id: state.template_id, step_number: state.current_step, action: 'stopped', acted_by: req.user.id, step_ended_at: now, comment: `Arrêté — durée: ${totalDuration ?? '?'} min` }, { transaction: t });
+    await WorkflowHistory.create({ ticket_id: ticket.id, template_id: state.template_id, step_number: state.current_step, action: 'stopped', acted_by: req.user.id, step_ended_at: now, comment: `Arrêté [${state.context}] — durée: ${totalDuration ?? '?'} min` }, { transaction: t });
     await t.commit();
     if (ticket.assigned_to) updateAgentScore(ticket.assigned_to).catch(() => {});
     return res.json({ success: true, message: 'Workflow arrêté', data: { duration_minutes: totalDuration, status: 'resolved' } });
@@ -573,23 +579,67 @@ exports.stopWorkflow = async (req, res) => {
 
 /**
  * GET /api/tickets/:id/workflow/state
+ * Retourne l'état actif ET tout l'historique (supplier + client si escalade)
  */
 exports.getWorkflowState = async (req, res) => {
   try {
-    const state = await TicketWorkflowState.findOne({
+    // On cherche d'abord l'état actif, puis les états terminés si besoin
+    const activeState = await TicketWorkflowState.findOne({
+      where: { ticket_id: req.params.id, status: 'active' },
+      include: [{ model: WorkflowTemplate, as: 'template',
+        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
+    });
+
+    // Tous les états (pour afficher le circuit complet supplier + client)
+    const allStates = await TicketWorkflowState.findAll({
       where: { ticket_id: req.params.id },
       include: [{ model: WorkflowTemplate, as: 'template',
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order','ASC']] }] }],
+        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
+      order: [['created_at', 'ASC']],
     });
+
     const history = await WorkflowHistory.findAll({
       where: { ticket_id: req.params.id },
       include: [
-        { model: User, as: 'actor',   attributes: ['id','full_name','email'] },
-        { model: User, as: 'assignee', attributes: ['id','full_name','email'] },
+        { model: User, as: 'actor',   attributes: ['id', 'full_name', 'email'] },
+        { model: User, as: 'assignee', attributes: ['id', 'full_name', 'email'] },
       ],
-      order: [['acted_at','ASC']],
+      order: [['acted_at', 'ASC']],
     });
-    return res.json({ success: true, data: { state, history } });
+
+    // Stats par contexte
+    const supplierHistory = history.filter(h => {
+      const s = allStates.find(st => st.template_id === h.template_id && st.context === 'supplier');
+      return !!s;
+    });
+    const clientHistory = history.filter(h => {
+      const s = allStates.find(st => st.template_id === h.template_id && st.context === 'client');
+      return !!s;
+    });
+
+    const supplierDuration = supplierHistory
+      .filter(h => h.step_duration_minutes)
+      .reduce((sum, h) => sum + (h.step_duration_minutes ?? 0), 0);
+
+    const clientDuration = clientHistory
+      .filter(h => h.step_duration_minutes)
+      .reduce((sum, h) => sum + (h.step_duration_minutes ?? 0), 0);
+
+    return res.json({
+      success: true,
+      data: {
+        state:   activeState,
+        states:  allStates,
+        history,
+        stats: {
+          supplier_duration_minutes: supplierDuration,
+          client_duration_minutes:   clientDuration,
+          total_duration_minutes:    supplierDuration + clientDuration,
+          escalated: allStates.some(s => s.context === 'client'),
+          contexts:  [...new Set(allStates.map(s => s.context))],
+        },
+      },
+    });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -599,7 +649,7 @@ exports.createBilling = async (req, res) => {
   try {
     const ticket = await Ticket.findByPk(req.params.id);
     if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
-    if (!['resolved','closed'].includes(ticket.status))
+    if (!['resolved', 'closed'].includes(ticket.status))
       return res.status(400).json({ success: false, message: 'Only resolved/closed tickets can be billed' });
     const existing = await TicketBilling.findOne({ where: { ticket_id: ticket.id } });
     if (existing) return res.status(400).json({ success: false, message: 'Billing already exists' });
@@ -619,7 +669,7 @@ exports.getBilling = async (req, res) => {
   try {
     const billing = await TicketBilling.findOne({
       where: { ticket_id: req.params.id },
-      include: [{ model: User, as: 'creator', attributes: ['id','full_name','email'] }],
+      include: [{ model: User, as: 'creator', attributes: ['id', 'full_name', 'email'] }],
     });
     if (!billing) return res.status(404).json({ success: false, message: 'No billing found' });
     return res.json({ success: true, data: { billing } });
@@ -645,10 +695,10 @@ exports.getAllBillings = async (req, res) => {
     const billings = await TicketBilling.findAll({
       where,
       include: [
-        { model: Ticket, as: 'ticket', attributes: ['id','ticket_number','subject','duration_minutes'] },
-        { model: User,   as: 'creator', attributes: ['id','full_name'] },
+        { model: Ticket, as: 'ticket', attributes: ['id', 'ticket_number', 'subject', 'duration_minutes'] },
+        { model: User,   as: 'creator', attributes: ['id', 'full_name'] },
       ],
-      order: [['billing_date','DESC']],
+      order: [['billing_date', 'DESC']],
     });
     const total = billings.reduce((s, b) => s + parseFloat(b.amount), 0);
     return res.json({ success: true, data: { billings, total: total.toFixed(2) } });

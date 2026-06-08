@@ -106,7 +106,16 @@ WorkflowTemplate.belongsTo(Category, { foreignKey: 'category_id', as: 'category'
 // WorkflowStep <-> Department
 Department.hasMany(WorkflowTemplateStep, { foreignKey: 'department_id', as: 'workflowSteps' });
 WorkflowTemplateStep.belongsTo(Department, { foreignKey: 'department_id', as: 'department' });
+// WorkflowStep <-> User
+User.hasMany(WorkflowTemplateStep, {
+  foreignKey: 'user_id',
+  as: 'workflowSteps'
+});
 
+WorkflowTemplateStep.belongsTo(User, {
+  foreignKey: 'user_id',
+  as: 'assignedUser'
+});
 // Ticket <-> WorkflowState (L'état actuel du ticket dans le circuit)
 Ticket.hasOne(TicketWorkflowState, { foreignKey: 'ticket_id', as: 'workflowState' });
 TicketWorkflowState.belongsTo(Ticket, { foreignKey: 'ticket_id', as: 'ticket' });

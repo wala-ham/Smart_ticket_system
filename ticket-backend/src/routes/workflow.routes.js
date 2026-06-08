@@ -1,21 +1,25 @@
-// src/routes/workflow.routes.js
+'use strict';
 const express = require('express');
 const router  = express.Router();
 const ctrl    = require('../controllers/workflow.controller');
 const auth    = require('../middleware/auth.middleware');
-const { isCompanyAdmin, isStaff } = require('../middleware/role.middleware');
+const { isStaff, isCompanyAdmin } = require('../middleware/role.middleware');
+const { filterByOrganization }    = require('../middleware/organization.middleware');
 
 router.use(auth);
+router.use(filterByOrganization);
 
-// ── Templates CRUD ────────────────────────────────────────────────────────────
-router.get('/',       isCompanyAdmin, ctrl.getAllTemplates);
-router.get('/:id',    isCompanyAdmin, ctrl.getTemplateById);
-router.post('/',      isCompanyAdmin, ctrl.createTemplate);
-router.put('/:id',    isCompanyAdmin, ctrl.updateTemplate);
-router.delete('/:id', isCompanyAdmin, ctrl.deleteTemplate);
+// ─── Templates CRUD ───────────────────────────────────────────────────────────
+router.get('/',                            isStaff,        ctrl.getAllTemplates);
+router.post('/',                           isCompanyAdmin, ctrl.createTemplate);
+router.get('/by-category/:categoryId',     isStaff,        ctrl.getTemplatesByCategory);
+router.get('/:id',                         isStaff,        ctrl.getTemplateById);
+router.put('/:id',                         isCompanyAdmin, ctrl.updateTemplate);
+router.delete('/:id',                      isCompanyAdmin, ctrl.deleteTemplate);
 
-// ── Billing (liste globale) ───────────────────────────────────────────────────
-// Monter séparément dans app.js : app.use('/api/billing', require('./routes/workflow.routes').billingRouter)
+// ─── Facturation globale ──────────────────────────────────────────────────────
+router.get('/billings',                    isCompanyAdmin, ctrl.getAllBillings);
+
 module.exports = router;
 
 // Export séparé pour les routes ticket-workflow et billing
