@@ -28,22 +28,26 @@ module.exports = (sequelize) => {
     action: {
       type: DataTypes.STRING(20),
       allowNull: false,
-      validate: { isIn: [['started','forward','backward','completed','cancelled','suspended','resumed','stopped']] },
+      // ✅ AJOUTE 'escalated' à la liste
+      validate: { 
+        isIn: [['started','forward','backward','completed','cancelled','suspended','resumed','stopped','escalated']] 
+      },
     },
+    
     step_started_at: {
-  type: DataTypes.DATE,
-  allowNull: true,
-},
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
 
-step_ended_at: {
-  type: DataTypes.DATE,
-  allowNull: true,
-},
+    step_ended_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
 
-step_duration_minutes: {
-  type: DataTypes.INTEGER,
-  allowNull: true,
-},
+    step_duration_minutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
 
     acted_by: {
       type: DataTypes.INTEGER,

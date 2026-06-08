@@ -583,64 +583,68 @@ exports.stopWorkflow = async (req, res) => {
  */
 exports.getWorkflowState = async (req, res) => {
   try {
-    // On cherche d'abord l'état actif, puis les états terminés si besoin
-    const activeState = await TicketWorkflowState.findOne({
-      where: { ticket_id: req.params.id, status: 'active' },
-      include: [{ model: WorkflowTemplate, as: 'template',
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
-    });
-
-    // Tous les états (pour afficher le circuit complet supplier + client)
+    // Récupérer TOUS les états (actif + historiques supplier/client)
     const allStates = await TicketWorkflowState.findAll({
       where: { ticket_id: req.params.id },
-      include: [{ model: WorkflowTemplate, as: 'template',
-        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] }],
-      order: [['created_at', 'ASC']],
+      include: [{ 
+        model: WorkflowTemplate, as: 'template',
+        include: [{ model: WorkflowTemplateStep, as: 'steps', order: [['step_order', 'ASC']] }] 
+      }],
+      order: [['created_at', 'ASC']]
     });
 
+    // Récupérer l'état actif (si existant)
+    const activeState = allStates.find(s => s.status === 'active') || null;
+
+    // Récupérer TOUT l'historique pour TOUS les états
     const history = await WorkflowHistory.findAll({
       where: { ticket_id: req.params.id },
       include: [
-        { model: User, as: 'actor',   attributes: ['id', 'full_name', 'email'] },
+        { model: User, as: 'actor', attributes: ['id', 'full_name', 'email'] },
         { model: User, as: 'assignee', attributes: ['id', 'full_name', 'email'] },
       ],
-      order: [['acted_at', 'ASC']],
+      order: [['acted_at', 'ASC']]
     });
 
-    // Stats par contexte
-    const supplierHistory = history.filter(h => {
-      const s = allStates.find(st => st.template_id === h.template_id && st.context === 'supplier');
-      return !!s;
-    });
-    const clientHistory = history.filter(h => {
-      const s = allStates.find(st => st.template_id === h.template_id && st.context === 'client');
-      return !!s;
-    });
+    // Calculer les stats PAR CONTEXTE et PAR ÉTAT
+    let supplierDuration = 0;
+    let clientDuration = 0;
+    
+    for (const state of allStates) {
+      const stateHistory = history.filter(h => h.template_id === state.template_id);
+      const stateDuration = stateHistory
+        .filter(h => h.step_duration_minutes)
+        .reduce((sum, h) => sum + (h.step_duration_minutes || 0), 0);
+      
+      if (state.context === 'supplier') {
+        supplierDuration += stateDuration;
+      } else if (state.context === 'client') {
+        clientDuration += stateDuration;
+      }
+    }
 
-    const supplierDuration = supplierHistory
-      .filter(h => h.step_duration_minutes)
-      .reduce((sum, h) => sum + (h.step_duration_minutes ?? 0), 0);
-
-    const clientDuration = clientHistory
-      .filter(h => h.step_duration_minutes)
-      .reduce((sum, h) => sum + (h.step_duration_minutes ?? 0), 0);
+    // Trouver si escalade a eu lieu
+    const hasEscalation = allStates.some(s => s.context === 'client' && s.escalated_from_state_id);
 
     return res.json({
       success: true,
       data: {
-        state:   activeState,
-        states:  allStates,
-        history,
+        state: activeState,
+        states: allStates,
+        history: history,
         stats: {
           supplier_duration_minutes: supplierDuration,
-          client_duration_minutes:   clientDuration,
-          total_duration_minutes:    supplierDuration + clientDuration,
-          escalated: allStates.some(s => s.context === 'client'),
-          contexts:  [...new Set(allStates.map(s => s.context))],
-        },
-      },
+          client_duration_minutes: clientDuration,
+          total_duration_minutes: supplierDuration + clientDuration,
+          escalated: hasEscalation,
+          contexts: [...new Set(allStates.map(s => s.context))]
+        }
+      }
     });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { 
+    console.error('getWorkflowState error:', err);
+    return res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 // ─── Facturation ──────────────────────────────────────────────────────────────

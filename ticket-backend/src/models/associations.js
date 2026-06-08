@@ -91,7 +91,26 @@ TicketBilling.belongsTo(User,   { foreignKey: 'created_by', as: 'creator' });
 // ============================================
 // WORKFLOW ASSOCIATIONS (Logique métier)
 // ============================================
+TicketWorkflowState.belongsTo(TicketWorkflowState, {
+  foreignKey: 'escalated_from_state_id',
+  as: 'escalatedFrom'
+});
 
+TicketWorkflowState.hasMany(TicketWorkflowState, {
+  foreignKey: 'escalated_from_state_id',
+  as: 'escalatedTo'
+});
+
+// Un workflow peut avoir un parent (si tu veux chaîner plusieurs escalades)
+TicketWorkflowState.belongsTo(TicketWorkflowState, {
+  foreignKey: 'parent_state_id',
+  as: 'parentState'
+});
+
+TicketWorkflowState.hasMany(TicketWorkflowState, {
+  foreignKey: 'parent_state_id',
+  as: 'childStates'
+});
 // WorkflowTemplate <-> Steps
 WorkflowTemplate.hasMany(WorkflowTemplateStep, { foreignKey: 'template_id', as: 'steps', onDelete: 'CASCADE' });
 WorkflowTemplateStep.belongsTo(WorkflowTemplate, { foreignKey: 'template_id', as: 'template' });
