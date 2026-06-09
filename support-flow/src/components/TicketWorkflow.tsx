@@ -37,11 +37,6 @@ async function api(path: string, options: RequestInit = {}, token?: string) {
   return json;
 }
 
-const contextBadge = (ctx: string) =>
-  ctx === 'supplier'
-    ? <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold"><Truck className="h-3 w-3" />Fournisseur</span>
-    : <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 font-semibold"><Building2 className="h-3 w-3" />Client</span>;
-
 export const TicketWorkflow: React.FC<{
   ticketId: number; token: string; userRole?: string;
   ticketStatus?: string; onStatusChange?: (s: string) => void;
@@ -65,10 +60,8 @@ export const TicketWorkflow: React.FC<{
   const [msg, setMsg]   = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
 
-  // 🔥 NOUVEAU - variables pour la séparation des circuits
+  // Variables pour la séparation des circuits
   const hasActiveWorkflow = state !== null && state?.status === 'active';
-  const hasSupplierWorkflow = allStates.some(s => s.context === 'supplier');
-  const hasClientWorkflow = allStates.some(s => s.context === 'client');
   const supplierState = allStates.find(s => s.context === 'supplier');
   const clientState = allStates.find(s => s.context === 'client');
 
@@ -88,10 +81,10 @@ export const TicketWorkflow: React.FC<{
       setStats(fetchedStats);
 
       const wfStatus = fetchedState?.status ?? '';
-      if (wfStatus === 'completed' && isAdmin) {
+      if ((wfStatus === 'completed' || ticketStatus === 'resolved') && isAdmin) {
         try {
           const bj = await api(`/api/tickets/${ticketId}/billing`, {}, token);
-          setBilling(bj?.data?.billing ?? null);
+          if (bj?.data?.billing) setBilling(bj.data.billing);
         } catch { setBilling(null); }
       } else { setBilling(null); }
     } catch { setState(null); }
@@ -144,38 +137,43 @@ export const TicketWorkflow: React.FC<{
   };
 
   const handleBilling = async () => {
-    setActing(true); setErr(null);
+    setActing(true);
+    setErr(null);
     try {
       const res = await api(`/api/tickets/${ticketId}/billing`, {
         method: 'POST',
-        body: JSON.stringify({ hourly_rate: parseFloat(hourlyRate) }),
+        body: JSON.stringify({ 
+          hourly_rate: parseFloat(hourlyRate),
+          currency: 'TND'
+        }),
       }, token);
+      
       setBilling(res?.data?.billing);
       setShowBilling(false);
-      setMsg(`Facture créée — ${res?.data?.billing?.amount} ${res?.data?.billing?.currency}`);
-    } catch (e: any) { setErr(e?.body?.message ?? e?.message ?? 'Erreur'); }
-    finally { setActing(false); }
+      setMsg(`✅ Facture créée : ${res?.data?.billing?.amount} TND`);
+    } catch (e: any) {
+      setErr(e?.body?.message ?? e?.message ?? 'Erreur lors de la création');
+    } finally {
+      setActing(false);
+    }
   };
 
   const steps    = state?.template?.steps ?? [];
   const wfStatus = state?.status ?? '';
   const context  = state?.context ?? 'supplier';
   
-  // 🔥 MODIFIÉ - getAvailableActions avec cache du bouton démarrer
   const getAvailableActions = (ticketStatus: string, wfStatus: string, context: string) => {
-    // Si un workflow est déjà actif, ne pas montrer "start"
     if (hasActiveWorkflow) {
       if (wfStatus === 'active') {
         const base = ['forward', 'backward', 'suspended', 'stopped'];
         if (context === 'supplier') base.push('escalate_to_client');
         return base;
       }
-      if (wfStatus === 'completed') return ['billing'];
+      if (wfStatus === 'completed') return [];
       if (ticketStatus === 'suspended') return ['resumed'];
       return [];
     }
     
-    // Pas de workflow actif → montrer "start"
     if (!wfStatus || wfStatus === '') return ['start_supplier'];
     return [];
   };
@@ -190,7 +188,6 @@ export const TicketWorkflow: React.FC<{
     resumed:          { label: 'Reprendre',               icon: <RotateCcw className="h-3.5 w-3.5" />,    color: 'bg-blue-600 hover:bg-blue-700 text-white' },
     stopped:          { label: 'Arrêter',                 icon: <StopCircle className="h-3.5 w-3.5" />,   color: 'border border-red-400 text-red-700 hover:bg-red-50' },
     escalate_to_client: { label: 'Escalader → Client',   icon: <AlertTriangle className="h-3.5 w-3.5" />, color: 'bg-amber-500 hover:bg-amber-600 text-white' },
-    billing:          { label: 'Facturer',                icon: <Receipt className="h-3.5 w-3.5" />,      color: 'bg-purple-600 hover:bg-purple-700 text-white' },
   };
 
   if (loading) return (
@@ -198,8 +195,6 @@ export const TicketWorkflow: React.FC<{
       <p className="text-sm text-muted-foreground animate-pulse">Chargement workflow...</p>
     </div>
   );
-
-  const isEscalated = stats?.escalated;
 
   return (
     <div className="space-y-4">
@@ -225,7 +220,6 @@ export const TicketWorkflow: React.FC<{
             </div>
           </div>
 
-          {/* Progress bar fournisseur */}
           {supplierState.template?.steps?.length > 0 && (
             <div className="space-y-1.5 mb-3">
               <div className="flex gap-1">
@@ -245,7 +239,6 @@ export const TicketWorkflow: React.FC<{
             </div>
           )}
           
-          {/* Durée du circuit fournisseur */}
           {stats && stats.supplier_duration_minutes > 0 && (
             <div className="text-xs text-orange-600 flex items-center gap-1 mt-2">
               <Clock className="h-3 w-3" />
@@ -274,7 +267,6 @@ export const TicketWorkflow: React.FC<{
             </div>
           </div>
 
-          {/* Progress bar client */}
           {clientState.template?.steps?.length > 0 && clientState.status === 'active' && (
             <div className="space-y-1.5 mb-3">
               <div className="flex gap-1">
@@ -294,7 +286,6 @@ export const TicketWorkflow: React.FC<{
             </div>
           )}
           
-          {/* Durée du circuit client */}
           {stats && stats.client_duration_minutes > 0 && (
             <div className="text-xs text-teal-600 flex items-center gap-1 mt-2">
               <Clock className="h-3 w-3" />
@@ -308,7 +299,7 @@ export const TicketWorkflow: React.FC<{
       {!hasActiveWorkflow && !supplierState && (
         <div className="card-gradient p-5 rounded-lg border border-border">
           <div className="flex flex-col items-center text-center gap-3">
-            {/* <Truck className="h-8 w-8 text-orange-500" /> */}
+            <Truck className="h-8 w-8 text-orange-500" />
             <p className="text-sm text-muted-foreground">
               Le workflow n'a pas encore été démarré
             </p>
@@ -360,7 +351,6 @@ export const TicketWorkflow: React.FC<{
               );
             })}
 
-            {/* Bouton escalade - uniquement si workflow supplier actif */}
             {actions.includes('escalate_to_client') && (
               <button disabled={acting}
                 onClick={() => setShowEscalateModal(true)}
@@ -377,47 +367,10 @@ export const TicketWorkflow: React.FC<{
               </button>
             )}
           </div>
-
-          {/* Facturation */}
-          {actions.includes('billing') && isAdmin && (
-            <div className="pt-1">
-              {billing ? (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg space-y-1">
-                  <p className="text-xs font-semibold text-purple-800 flex items-center gap-1"><Receipt className="h-3.5 w-3.5" /> Facture créée</p>
-                  <p className="text-xs text-purple-700">{billing.amount} {billing.currency} — {billing.duration_minutes} min @ {billing.hourly_rate}/h</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${billing.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{billing.status}</span>
-                </div>
-              ) : showBilling ? (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg space-y-2">
-                  <p className="text-xs font-semibold text-purple-800">Créer une facture</p>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-purple-700 whitespace-nowrap">Taux horaire :</label>
-                    <input type="number" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)}
-                      className="form-input text-xs w-24 py-1" min="0" step="0.5" />
-                    <span className="text-xs text-purple-600">TND/h</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={handleBilling} disabled={acting}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold">
-                      Confirmer
-                    </button>
-                    <button onClick={() => setShowBilling(false)} className="text-xs text-muted-foreground hover:text-foreground">Annuler</button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={() => setShowBilling(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white">
-                  <Receipt className="h-3.5 w-3.5" /> Facturer ce ticket
-                </button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ── Historique avec séparation visuelle ── */}
-
-           {/* ── Historique avec séparation visuelle ── */}
+      {/* ── Historique complet ── */}
       <div className="card-gradient p-4 rounded-lg border border-border space-y-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Historique complet</p>
         
@@ -521,6 +474,120 @@ export const TicketWorkflow: React.FC<{
           </div>
         )}
       </div>
+
+      {/* ── SECTION FACTURATION (placée juste après l'historique) ── */}
+            {/* ── SECTION FACTURATION (stable - basée sur la durée) ── */}
+      {/* Afficher quand une durée totale existe (ticket a été traité) */}
+      {stats && stats.total_duration_minutes > 0 && !hasActiveWorkflow && isAdmin && (
+        <div className="card-gradient p-5 rounded-lg border border-purple-200 bg-purple-50/30">
+          <div className="flex items-center gap-2 mb-4">
+            <Receipt className="h-5 w-5 text-purple-600" />
+            <h3 className="font-semibold text-purple-800">Facturation</h3>
+          </div>
+
+          {billing ? (
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-purple-700">Montant total :</span>
+                <span className="text-xl font-bold text-purple-800">
+                  {billing.amount} {billing.currency}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-purple-600">
+                <span>Durée totale : {stats.total_duration_minutes} minutes</span>
+                <span>Taux : {billing.hourly_rate} TND/h</span>
+              </div>
+              <div className="flex justify-between items-center pt-2">
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  billing.status === 'paid' 
+                    ? 'bg-emerald-100 text-emerald-700' 
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {billing.status === 'paid' ? '✅ Payée' : '⏳ En attente'}
+                </span>
+                {billing.status !== 'paid' && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api(`/api/tickets/${ticketId}/billing/status`, {
+                          method: 'PUT',
+                          body: JSON.stringify({ status: 'paid' })
+                        }, token);
+                        await load();
+                        setMsg('Facture marquée comme payée');
+                      } catch (e: any) {
+                        setErr(e?.message ?? 'Erreur');
+                      }
+                    }}
+                    className="text-xs px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    Marquer comme payée
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : showBilling ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-purple-600 block mb-1">Durée totale</label>
+                  <p className="text-lg font-semibold text-purple-800">
+                    {stats.total_duration_minutes} minutes
+                  </p>
+                  <p className="text-xs text-purple-500 mt-1">
+                    (Fournisseur: {stats.supplier_duration_minutes ?? 0} min + Client: {stats.client_duration_minutes ?? 0} min)
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-purple-600 block mb-1">Taux horaire (TND/h)</label>
+                  <input 
+                    type="number" 
+                    value={hourlyRate} 
+                    onChange={e => setHourlyRate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    min="0"
+                    step="10"
+                    placeholder="Ex: 100"
+                  />
+                </div>
+              </div>
+              
+              <div className="bg-purple-100 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-purple-700">Montant estimé :</span>
+                  <span className="text-xl font-bold text-purple-800">
+                    {((stats.total_duration_minutes / 60) * parseFloat(hourlyRate || '0')).toFixed(2)} TND
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleBilling}
+                  disabled={acting || !hourlyRate || parseFloat(hourlyRate) <= 0}
+                  className="flex-1 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {acting ? 'Création...' : '💰 Générer la facture'}
+                </button>
+                <button
+                  onClick={() => setShowBilling(false)}
+                  className="px-4 py-2 rounded-lg border hover:bg-slate-50"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowBilling(true)}
+              className="w-full py-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold flex items-center justify-center gap-2"
+            >
+              <Receipt className="h-4 w-4" />
+              Créer la facture
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Modal escalade ── */}
       {showEscalateModal && (

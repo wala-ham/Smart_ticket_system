@@ -312,6 +312,7 @@ exports.forwardWorkflow = async (req, res) => {
       const totalDuration = calcMinutes(ticket.started_at, now);
       await state.update({ status: 'completed', completed_at: now }, { transaction: t });
       await ticket.update({ status: 'resolved', ended_at: now, duration_minutes: totalDuration }, { transaction: t });
+      
       await WorkflowHistory.create({
         ticket_id: ticket.id, template_id: state.template_id,
         step_number: state.current_step, step_label: 'Fin du circuit',
